@@ -1,4 +1,5 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
+import { MemorySaver } from "@langchain/langgraph";
 import {
   PlannerGraphState,
   PlannerGraphStateObj,
@@ -59,5 +60,7 @@ const workflow = new StateGraph(PlannerGraphStateObj, GraphConfiguration)
   .addEdge("generate-plan", "notetaker")
   .addEdge("notetaker", "interrupt-proposed-plan");
 
-export const graph = workflow.compile();
+export const graph = workflow.compile({
+  checkpointer: new MemorySaver(),
+});
 graph.name = "Open SWE - Planner";

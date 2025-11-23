@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { GITHUB_INSTALLATION_ID_COOKIE } from "@openswe/shared/constants";
 import { getCookie } from "@/lib/utils";
+import { fetchWithAuthRedirect } from "@/utils/github";
 import { Endpoints } from "@octokit/types";
 
 type GitHubInstallationsResponse =
@@ -86,7 +87,7 @@ export function useGitHubInstallations(): UseGitHubInstallationsReturn {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/api/github/installations");
+      const response = await fetchWithAuthRedirect("/api/github/installations");
 
       if (!response.ok) {
         const errorData = await response.json();

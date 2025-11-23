@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "turbo": "^2.5.0",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "resolutions": {
     "@langchain/langgraph-sdk": "^0.0.95",
@@ -27,5 +27,18 @@
     "langsmith": "^0.3.48",
     "jsonwebtoken": "^9.0.2"
   },
-  "packageManager": "yarn@3.5.1"
+  "packageManager": "yarn@3.5.1",
+  "dependencies": {
+    "@ibm-cloud/watsonx-ai": "^1.7.2",
+    "@langchain/core": "^1.0.4",
+    "@langchain/langgraph": "^1.0.1",
+    "@langchain/langgraph-checkpoint": "^1.0.0",
+    "@radix-ui/react-popover": "^1.1.15",
+    "execa": "^9.6.0",
+    "ibm-cloud-sdk-core": "^5.4.3",
+    "openai": "^6.8.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "unified": "^11.0.5"
+  }
 }

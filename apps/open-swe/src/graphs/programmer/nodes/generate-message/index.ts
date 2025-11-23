@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import {
+import type {
   GraphState,
   GraphConfig,
   GraphUpdate,
@@ -27,8 +27,7 @@ import { createLogger, LogLevel } from "../../../../utils/logger.js";
 import { getCurrentPlanItem } from "../../../../utils/current-task.js";
 import { getMessageContentString } from "@openswe/shared/messages";
 import { getActivePlanItems } from "@openswe/shared/open-swe/tasks";
-import {
-  CODE_REVIEW_PROMPT,
+import {CODE_REVIEW_PROMPT,
   DEPENDENCIES_INSTALLED_PROMPT,
   DEPENDENCIES_NOT_INSTALLED_PROMPT,
   DYNAMIC_SYSTEM_PROMPT,
@@ -36,9 +35,11 @@ import {
   STATIC_SYSTEM_INSTRUCTIONS,
   CUSTOM_FRAMEWORK_PROMPT,
 } from "./prompt.js";
+import { FRAPPE_PROGRAMMER_INSTRUCTIONS } from "../../../../planner/frappe-programmer-prompt.js";
 import { getRepoAbsolutePath } from "@openswe/shared/git";
 import { getMissingMessages } from "../../../../utils/github/issue-messages.js";
 import { getPlansFromIssue } from "../../../../utils/github/issue-task.js";
+
 import { createGrepTool } from "../../../../tools/grep.js";
 import { createInstallDependenciesTool } from "../../../../tools/install-dependencies.js";
 import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
@@ -93,12 +94,23 @@ const formatDynamicContextPrompt = (state: GraphState) => {
     );
 };
 
+const mergeFrappeProgrammerPrompt = (
+  genericPrompt: string,
+  frappePrompt: string,
+) => {
+  // Inject Frappe rules at the {FRAPPE_RULES} placeholder if present, else append at the end
+  if (genericPrompt.includes('{FRAPPE_RULES}')) {
+    return genericPrompt.replace('{FRAPPE_RULES}', frappePrompt);
+  }
+  return `${genericPrompt}\n\n${frappePrompt}`;
+};
+
 const formatStaticInstructionsPrompt = (
   state: GraphState,
   config: GraphConfig,
   isAnthropicModel: boolean,
 ) => {
-  return (
+  let prompt = (
     isAnthropicModel
       ? STATIC_ANTHROPIC_SYSTEM_INSTRUCTIONS
       : STATIC_SYSTEM_INSTRUCTIONS
@@ -110,6 +122,12 @@ const formatStaticInstructionsPrompt = (
       shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
     )
     .replace("{DEV_SERVER_PROMPT}", ""); // Always empty until we add dev server tool
+
+  // If PROGRAMMER_FRAPPE_MODE env is enabled, merge Frappe rules into the prompt
+  if (process.env.PROGRAMMER_FRAPPE_MODE === "true") {
+    prompt = mergeFrappeProgrammerPrompt(prompt, FRAPPE_PROGRAMMER_INSTRUCTIONS);
+  }
+  return prompt;
 };
 
 const formatCacheablePrompt = (

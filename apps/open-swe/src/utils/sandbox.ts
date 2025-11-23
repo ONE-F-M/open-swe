@@ -1,4 +1,6 @@
 import { Daytona, Sandbox, SandboxState } from "@daytonaio/sdk";
+import dotenv from "dotenv";
+import path from "path";
 import { createLogger, LogLevel } from "./logger.js";
 import { GraphConfig, TargetRepository } from "@openswe/shared/open-swe/types";
 import { DEFAULT_SANDBOX_CREATE_PARAMS } from "../constants.js";
@@ -7,7 +9,17 @@ import { cloneRepo } from "./github/git.js";
 import { FAILED_TO_GENERATE_TREE_MESSAGE, getCodebaseTree } from "./tree.js";
 import { isLocalMode } from "@openswe/shared/open-swe/local-mode";
 
+
+// Load environment variables
+dotenv.config({ path: path.resolve(process.cwd(), "open-swe/.env") });
+
 const logger = createLogger(LogLevel.INFO, "Sandbox");
+
+// READ the API key here
+const DAYTONA_API_KEY = process.env.DAYTONA_API_KEY;
+// You might still need the Organization ID for general client context,
+// even if not strictly required for the API Key header itself, depending on your Daytona server setup.
+const DAYTONA_ORGANIZATION_ID = process.env.DAYTONA_ORGANIZATION_ID;
 
 // Singleton instance of Daytona
 let daytonaInstance: Daytona | null = null;
@@ -17,7 +29,11 @@ let daytonaInstance: Daytona | null = null;
  */
 export function daytonaClient(): Daytona {
   if (!daytonaInstance) {
-    daytonaInstance = new Daytona();
+    // --- CHANGE IS HERE ---
+    daytonaInstance = new Daytona({
+      apiKey: DAYTONA_API_KEY, // Use the correct property for your API Key
+      organizationId: DAYTONA_ORGANIZATION_ID, // Pass this just in case it's needed
+    });
   }
   return daytonaInstance;
 }
