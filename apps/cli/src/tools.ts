@@ -85,7 +85,7 @@ export const benchClearCacheTool = tool(
 		name: "bench_clear_cache",
 		description: "Clear Frappe cache. Use before running tests to ensure clean state.",
 		schema: z.object({
-			site: z.string().optional().describe("Site name (default: onefm.localhost)"),
+			site: z.string().optional().describe("Site name (default: onefm)"),
 			sandbox: z.any().describe("The active Daytona Sandbox instance (required at runtime)")
 		})
 	}
