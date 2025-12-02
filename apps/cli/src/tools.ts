@@ -93,7 +93,8 @@ export const benchClearCacheTool = tool(
 
 export const benchConsoleTool = tool(
 	async ({ site, code, sandbox }: { site: string; code: string; sandbox: any }) => {
-		const cmd = `bench --site ${site} console --eval '${code.replace(/'/g, "\\'")}'`;
+		const safeCode = code.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+		const cmd = `bench --site ${site} console --eval '${safeCode}'`;
 		const result = await executeInSandbox(sandbox, cmd);
 		if (result.exitCode !== 0) {
 			throw new Error(`Console command failed for site ${site}: ${result.stderr}`);

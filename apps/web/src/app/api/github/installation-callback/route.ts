@@ -34,8 +34,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Create the response that will redirect back to the app
-    // const response = NextResponse.redirect(returnTo);
-    const response = NextResponse.redirect("https://automatically-geographical-lucio.ngrok-free.dev/");
+    const response = NextResponse.redirect(returnTo);
+    // const response = NextResponse.redirect("https://automatically-geographical-lucio.ngrok-free.dev/");
 
     // Clear cookies as they're no longer needed
     const expiredCookieOptions = {
