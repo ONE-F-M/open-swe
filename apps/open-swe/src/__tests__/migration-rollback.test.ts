@@ -1,5 +1,5 @@
 import { MigrationHandler } from '@openswe/cli/src/migration/migration-handler.js';
-import { createFrappeSandbox, getClientCount } from './testing-bench-utils.js';
+import { createFrappeSandbox, getClientCount } from './testing-bench-utils.test.js';
 import { benchBackupTool, benchListAppsTool } from '../../../cli/src/tools.js';
 
 describe('Migration Rollback (Task 9.2)', () => {

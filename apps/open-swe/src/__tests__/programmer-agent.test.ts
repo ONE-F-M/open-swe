@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 import { FrappeProgrammerAgent, PlanStep } from "../agents/programmer-agent.js";
 import { PlannerAgent } from "../agents/planner-agent.js"; 
-import { createFrappeSandbox } from "./testing-bench-utils.js";
+import { createFrappeSandbox } from "./testing-bench-utils.test.js";
 import { HumanMessage } from "@langchain/core/messages";
 
 // --- ENVIRONMENT & MOCK SETUP ---
