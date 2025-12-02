@@ -11,7 +11,16 @@ export function getGitHubTokensFromConfig(config: GraphConfig): {
   githubAccessToken: string;
   githubInstallationToken: string;
   installationId: string;
-} {
+} 
+{
+  // 1. Prefer plain GITHUB_TOKEN from env for all environments
+   if (process.env.GITHUB_TOKEN) {
+    return {
+      githubAccessToken: process.env.GITHUB_TOKEN,
+      githubInstallationToken: process.env.GITHUB_TOKEN,
+      installationId: config.configurable?.[GITHUB_INSTALLATION_ID] ?? "",
+    };
+  }
   if (!config.configurable) {
     throw new Error("No configurable object found in graph config.");
   }
