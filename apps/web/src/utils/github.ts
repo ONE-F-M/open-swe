@@ -1,6 +1,6 @@
 function getBaseApiUrl(): string {
   let baseApiUrl = new URL(
-    process.env.NEXT_PUBLIC_API_URL || "https://automatically-geographical-lucio.ngrok-free.dev/api",
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api",
   ).href;
   baseApiUrl = baseApiUrl.endsWith("/") ? baseApiUrl : `${baseApiUrl}/`;
   return baseApiUrl;
