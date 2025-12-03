@@ -2,7 +2,7 @@ import axios from "axios";
 
 const DAYTONA_API_URL = process.env.DAYTONA_API_URL || "https://app.daytona.io/api";
 const DAYTONA_API_KEY = process.env.DAYTONA_API_KEY!;
-const SNAPSHOT_ID = process.env.DAYTONA_GOLDEN_SNAPSHOT_ID || "onefm-frappe-bench-golden-v1-1764650366";
+const SNAPSHOT_ID = process.env.DAYTONA_GOLDEN_SNAPSHOT_ID || "onefm-frappe-bench-golden-v1-1764694398";
 const TIMEOUT_SEC = 45 * 1000;
 
 interface Sandbox {
