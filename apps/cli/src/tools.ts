@@ -6,7 +6,7 @@ import { z } from "zod";
 
 export const benchMigrateTool = tool(
 	async ({ site, sandbox }: { site: string, sandbox: any }) => {
-		const command = `bench --site ${site} migrate`;
+		const command = `bench --site ${site} migrate --skip-failing`;
 		console.log(`[benchMigrateTool] About to execute:`, command, 'with sandbox:', sandbox);
 		const result = await executeInSandbox(sandbox, command);
 		console.log(`[benchMigrateTool] Execution result:`, result);
