@@ -7,6 +7,23 @@ function getBaseApiUrl(): string {
 }
 
 /**
+ * Wrapper for fetch that redirects to GitHub login if a 401 Unauthorized is returned.
+ * Use this for all API calls that require authentication.
+ */
+export async function fetchWithAuthRedirect(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, init);
+  if (response.status === 401) {
+    // Optionally, show a message to the user here
+    if (typeof window !== "undefined") {
+      window.location.href = "/api/auth/github/login";
+    }
+    // Return a rejected promise so calling code can handle if needed
+    return Promise.reject(new Error("Session expired. Redirecting to login."));
+  }
+  return response;
+}
+
+/**
  * Fetches repositories accessible to a GitHub App installation
  */
 export async function getInstallationRepositories(
@@ -22,14 +39,14 @@ export async function getInstallationRepositories(
   url.searchParams.set("page", page.toString());
   url.searchParams.set("per_page", perPage.toString());
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithAuthRedirect(url.toString(), {
     headers: {
       Authorization: `Bearer ${installationToken}`,
       Accept: "application/vnd.github.v3+json",
       "User-Agent": "YourAppName",
     },
   });
-
+// Handle expired or invalid tokens
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
@@ -57,7 +74,7 @@ export async function getRepositoryBranches(
 ): Promise<{ branches: Branch[]; hasMore: boolean; totalCount?: number }> {
   // First, get repository info to ensure we have the default branch
 
-  const repoResponse = await fetch(
+  const repoResponse = await fetchWithAuthRedirect(
     `${getBaseApiUrl()}github/proxy/repos/${owner}/${repo}`,
     {
       headers: {
@@ -74,7 +91,7 @@ export async function getRepositoryBranches(
   }
 
   // Fetch first 30 branches only
-  const response = await fetch(
+  const response = await fetchWithAuthRedirect(
     `${getBaseApiUrl()}github/proxy/repos/${owner}/${repo}/branches?per_page=${perPage}&page=${page}`,
     {
       headers: {
@@ -83,7 +100,8 @@ export async function getRepositoryBranches(
       },
     },
   );
-
+// Handle expired or invalid tokens
+ 
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(`Failed to fetch branches: ${JSON.stringify(errorData)}`);
@@ -106,7 +124,7 @@ export async function getRepositoryBranches(
       branches.splice(defaultBranchIndex, 1);
       branches.unshift(defaultBranchData);
     } else if (defaultBranchIndex === -1) {
-      const defaultBranchResponse = await fetch(
+      const defaultBranchResponse = await fetchWithAuthRedirect(
         `${getBaseApiUrl()}github/proxy/repos/${owner}/${repo}/branches/${defaultBranch}`,
         {
           headers: {
@@ -115,6 +133,7 @@ export async function getRepositoryBranches(
           },
         },
       );
+   // Handle expired or invalid tokens
       if (!defaultBranchResponse.ok) {
         const errorData = await defaultBranchResponse.json();
         throw new Error(
@@ -176,7 +195,6 @@ export async function searchBranch(
         },
       },
     );
-
     if (!response.ok) {
       if (response.status === 404) {
         return null; // Branch not found
@@ -251,7 +269,6 @@ export async function getPullRequest(inputs: {
         },
       },
     );
-
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(

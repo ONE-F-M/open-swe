@@ -81,8 +81,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Create the success response
-    const response = NextResponse.redirect(new URL("/chat", request.url));
+    // Create the success response with correct domain
+    const forwardedHost = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+    const redirectUrl = `${forwardedProto}://${forwardedHost}/chat`;
+    const response = NextResponse.redirect(redirectUrl);
 
     // Clear the state cookie as it's no longer needed
     response.cookies.set(GITHUB_AUTH_STATE_COOKIE, "", {

@@ -52,8 +52,8 @@ function AuthStatusContent() {
 
   const checkAuthStatus = async () => {
     try {
-      const response = await fetch("/api/auth/status");
-      const data = await response.json();
+      const response = await fetch("/api/auth/status");       
+     const data = await response.json();
       setIsAuth(data.authenticated);
     } catch (error) {
       console.error("Error checking auth status:", error);
