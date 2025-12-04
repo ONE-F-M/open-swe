@@ -72,9 +72,13 @@ export class PlannerAgent {
           }
           steps.push({ actionType, description: step, stepId });
           stepId++;
-          // After each code-modifying step, inject a migration step
+          // After each code-modifying step, inject migration, clear-cache, and restart steps
           if (actionType === 'MODIFY_CODE') {
-            steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate, clear-cache, and restart for the target site', stepId });
+            steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
+            stepId++;
+            steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
+            stepId++;
+            steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
             stepId++;
           }
         }

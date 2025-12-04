@@ -182,12 +182,14 @@ export async function generatePlan(
     for (let i = 0; i < plan.length; i++) {
       if (/MODIFY_CODE/i.test(plan[i])) lastModifyIdx = i;
     }
-    // Insert RUN_MIGRATION after last MODIFY_CODE
+    // Insert RUN_MIGRATION, CLEAR_CACHE, and RESTART_SITE after last MODIFY_CODE
     if (lastModifyIdx !== -1) {
       plan.splice(
         lastModifyIdx + 1,
         0,
-        'RUN_MIGRATION: Run bench migrate, clear-cache, and restart for the target site'
+        'RUN_MIGRATION: Run bench migrate --skip-failing for the target site',
+        'CLEAR_CACHE: Run bench clear-cache for the target site',
+        'RESTART_SITE: Run bench restart for the target site'
       );
     }
   }

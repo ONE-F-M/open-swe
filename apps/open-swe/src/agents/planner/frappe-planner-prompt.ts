@@ -128,7 +128,10 @@ except Exception as e:
 
 **Example plan:**
   1. MODIFY_CODE: Update client.json to add new field
-  2. RUN_MIGRATION: Run bench migrate, clear-cache, and restart for the target site
+  2. RUN_MIGRATION: Run bench migrate --skip-failing for the target site
+  3. CLEAR_CACHE: Run bench clear-cache for the target site
+  4. RESTART_SITE: Run bench restart for the target site
+  5. VALIDATE_TEST: Run tests to verify the change
   3. VALIDATE_TEST: Run tests to verify the change
 
 **Summary:**
