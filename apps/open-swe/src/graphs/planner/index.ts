@@ -4,7 +4,7 @@ import {
   PlannerGraphState,
   PlannerGraphStateObj,
 } from "@openswe/shared/open-swe/planner/types";
-import { GraphConfiguration } from "@openswe/shared/open-swe/types";
+import { GraphConfiguration, GraphConfig } from "@openswe/shared/open-swe/types";
 import {
   generateAction,
   generatePlan,
@@ -31,8 +31,22 @@ function takeActionOrGeneratePlan(
   return "generate-plan";
 }
 
+
+function ensureTargetRepository(state: PlannerGraphState & Record<string, any>): PlannerGraphState {
+if (!state.targetRepository) {
+    throw new Error("targetRepository must be provided dynamically in the initial state.");
+}
+  if (!state.assistant_id) {
+    state.assistant_id = "open-swe-agent"; // set your default assistant id
+  }
+  return state;
+}
+
 const workflow = new StateGraph(PlannerGraphStateObj, GraphConfiguration)
-  .addNode("prepare-graph-state", prepareGraphState, {
+  .addNode("prepare-graph-state", (state, config) => {
+    // Ensure targetRepository is always set before running prepareGraphState
+    return prepareGraphState(ensureTargetRepository(state) as PlannerGraphState, config as GraphConfig);
+  }, {
     ends: [END, "initialize-sandbox"],
   })
   .addNode("initialize-sandbox", initializeSandbox)

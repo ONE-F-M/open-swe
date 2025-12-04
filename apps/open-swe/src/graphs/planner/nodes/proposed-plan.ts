@@ -1,3 +1,4 @@
+import { PlannerAgent } from "../../../agents/planner/planner-agent.js";
 import { v4 as uuidv4 } from "uuid";
 import { AIMessage, BaseMessage } from "@langchain/core/messages";
 import { Command, END, interrupt } from "@langchain/langgraph";
@@ -192,6 +193,47 @@ export async function interruptProposedPlan(
   });
 
   let planItems: PlanItem[];
+  // Use PlannerAgent to map the raw plan to a structured plan with migration steps
+  // Import path assumes agents/planner/planner-agent.ts is correct
+  // Use state.sandboxSessionId as sandbox context if needed
+  let mappedSteps: any[] = [];
+  let plannerAgent: any = null;
+  let originalTask = state.proposedPlanTitle || (proposedPlan && proposedPlan.join('\n')) || '';
+  try {
+    plannerAgent = new PlannerAgent(undefined, config); // sandbox is not available in state, pass undefined
+    // Try to get user task from messages
+    const userMsg = getInitialUserRequest(state.messages);
+    let githubIssueId = state.githubIssueId;
+    // Fallback to userMsg.additional_kwargs.githubIssueId if not in state
+    if (!githubIssueId && userMsg && typeof userMsg === 'object' && (userMsg as any).additional_kwargs && (userMsg as any).additional_kwargs.githubIssueId) {
+      githubIssueId = (userMsg as any).additional_kwargs.githubIssueId;
+    }
+    if (typeof userMsg === 'string') {
+      originalTask = userMsg;
+    } else if (userMsg && typeof userMsg === 'object' && (userMsg as any).content) {
+      originalTask = (userMsg as any).content;
+    }
+    mappedSteps = await plannerAgent.generatePlan(originalTask, { configurable: config.configurable, githubIssueId });
+  } catch (e) {
+    logger.error("PlannerAgent.generatePlan failed, falling back to raw plan", { error: e });
+    mappedSteps = [];
+  }
+  // If mappedSteps is available, use it for planItems
+  if (mappedSteps.length > 0) {
+    planItems = mappedSteps.map((step, index) => ({
+      index,
+      plan: step.description,
+      actionType: step.actionType,
+      completed: false,
+    }));
+  } else {
+    // Fallback to raw plan if mapping fails
+    planItems = proposedPlan.map((p, index) => ({
+      index,
+      plan: p,
+      completed: false,
+    }));
+  }
   const userRequest = getInitialUserRequest(state.messages);
   const userFollowupRequest = getRecentUserRequest(state.messages);
   const userTaskRequest = userFollowupRequest || userRequest;
@@ -220,11 +262,7 @@ export async function interruptProposedPlan(
       });
     }
 
-    planItems = proposedPlan.map((p, index) => ({
-      index,
-      plan: p,
-      completed: false,
-    }));
+    // planItems is already set above using mappedSteps if available
     runInput.taskPlan = createNewTask(
       userTaskRequest,
       state.proposedPlanTitle,
@@ -308,12 +346,7 @@ export async function interruptProposedPlan(
   }
 
   if (humanResponse.type === "accept") {
-    planItems = proposedPlan.map((p, index) => ({
-      index,
-      plan: p,
-      completed: false,
-    }));
-
+    // planItems is already set above using mappedSteps if available
     runInput.taskPlan = createNewTask(
       userTaskRequest,
       state.proposedPlanTitle,

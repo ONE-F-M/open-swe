@@ -56,7 +56,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
     const planner = new PlannerAgent(sandbox, config);
     const initialContext = await planner.loadContext();
 
-    // Normalize targetRepository to always be an object for downstream compatibility
+    // Normalize and validate targetRepository for downstream compatibility
     let targetRepositoryObj: { owner: string; repo: string; branch?: string } | undefined = undefined;
     if (typeof params.targetRepository === "string") {
         const [owner, repo] = params.targetRepository.split("/");
@@ -64,9 +64,12 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
     } else if (params.targetRepository) {
         targetRepositoryObj = { ...params.targetRepository };
     }
-    // Set branch if targetBranch is provided
     if (targetRepositoryObj && params.targetBranch) {
         targetRepositoryObj.branch = params.targetBranch;
+    }
+    // Enforce that targetRepository is present and valid
+    if (!targetRepositoryObj || !targetRepositoryObj.owner || !targetRepositoryObj.repo || !targetRepositoryObj.branch) {
+        throw new Error("targetRepository (with owner, repo, and branch) must be provided in params for planner agent.");
     }
 
     // Generate the plan steps for the task, passing relevant context

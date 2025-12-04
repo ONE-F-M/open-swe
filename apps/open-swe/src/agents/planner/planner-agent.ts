@@ -27,6 +27,9 @@ export class PlannerAgent {
    * Returns an array of plan steps, each with an actionType and description.
    */
   async generatePlan(task: string, extraState?: Record<string, any>): Promise<any[]> {
+      // Debug: Log the task and extraState
+      console.log('[PlannerAgent] Task:', task);
+      console.log('[PlannerAgent] extraState:', JSON.stringify(extraState, null, 2));
     // Merge config and extraState, ensuring 'configurable' is at the root
     const mergedConfigurable = {
       ...((this.config?.configurable || {})),
@@ -52,6 +55,9 @@ export class PlannerAgent {
 
     const finalState = result as any;
 
+    // Debug: Log the raw plan output
+    console.log('[PlannerAgent] Raw plan output:', JSON.stringify(finalState, null, 2));
+
     // Extract plan steps from either 'plan' or 'proposedPlan' fields
     const planArray = Array.isArray(finalState.plan)
       ? finalState.plan
@@ -61,28 +67,33 @@ export class PlannerAgent {
 
     // Map each plan step to a structured step object with actionType and description
     if (planArray.length > 0) {
-        const steps: any[] = [];
-        let stepId = 1;
-        for (const step of planArray) {
-          let actionType: 'MODIFY_CODE' | 'RUN_MIGRATION' | 'VALIDATE_TEST' | 'FINAL_REVIEW' = 'MODIFY_CODE';
-          if (/validate|test/i.test(step)) {
-            actionType = 'VALIDATE_TEST';
-          } else if (/review/i.test(step)) {
-            actionType = 'FINAL_REVIEW';
-          }
-          steps.push({ actionType, description: step, stepId });
-          stepId++;
-          // After each code-modifying step, inject migration, clear-cache, and restart steps
-          if (actionType === 'MODIFY_CODE') {
-            steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
-            stepId++;
-            steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
-            stepId++;
-            steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
-            stepId++;
-          }
+      const steps: any[] = [];
+      let stepId = 1;
+      for (const step of planArray) {
+        let actionType: 'MODIFY_CODE' | 'RUN_MIGRATION' | 'VALIDATE_TEST' | 'FINAL_REVIEW' = 'MODIFY_CODE';
+        if (/validate|test/i.test(step)) {
+          actionType = 'VALIDATE_TEST';
+        } else if (/review/i.test(step)) {
+          actionType = 'FINAL_REVIEW';
         }
-        return steps;
+        steps.push({ actionType, description: step, stepId });
+        // Debug: Log each mapped step
+        console.log(`[PlannerAgent] Step ${stepId}:`, { actionType, description: step });
+        stepId++;
+        // After each code-modifying step, inject migration, clear-cache, and restart steps
+        if (actionType === 'MODIFY_CODE') {
+          steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
+          console.log(`[PlannerAgent] Step ${stepId}: Injected RUN_MIGRATION`);
+          stepId++;
+          steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
+          console.log(`[PlannerAgent] Step ${stepId}: Injected CLEAR_CACHE`);
+          stepId++;
+          steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
+          console.log(`[PlannerAgent] Step ${stepId}: Injected RESTART_SITE`);
+          stepId++;
+        }
+      }
+      return steps;
     }
     return [];
   }

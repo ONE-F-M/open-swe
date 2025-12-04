@@ -197,7 +197,7 @@ export async function generatePlan(
   // Get the app name for the current site (fallback to one_fm if not found)
   let appName = "one_fm";
   try {
-    const site = (config as any).site || process.env.FRAPPE_SITE || "onefm";
+    const site = (config as any).site || process.env.SITE_NAME || "onefm";
     const { apps } = await benchListAppsTool.invoke({ site });
     appName = (apps as string[]).find((a: string) => !["frappe", "erpnext"].includes(a)) || appName;
   } catch (e) {
