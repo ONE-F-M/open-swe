@@ -1,21 +1,19 @@
-// Output structure for parsed test failures
+// Structure for parsed test failures from test output
 export interface ParsedFailure {
   name: string;   // The name of the test function that failed (e.g., test_validation_error)
   error: string;  // The actual error message (e.g., ValueError, AssertionError)
   file: string;   // The file path where the error occurred
   line: number;   // The line number in that file
 }
-// src/error-handler.ts
-// Error formatter for common agent failures in Frappe/ERPNext automation
+
+// Error handler for formatting migration and test errors in Frappe/ERPNext automation
 
 export class FrappeErrorHandler {
-  /**
-   * Formats migration errors (Exit Code 1) into actionable messages.
-   */
+  // Formats migration errors into actionable, user-friendly messages
   formatMigrationError(error: string): string {
     const lowerError = error.toLowerCase();
 
-    // 1. Data/Type Error
+    // Detects data/type errors in migration output
     if (lowerError.includes('dataerror') || lowerError.includes('invalid field')) {
       return `
 Migration Failed: Invalid Data Type or Value.
@@ -27,7 +25,7 @@ Raw Error: \`${error.substring(0, 200)}...\`
 `;
     }
 
-    // 2. Integrity/Constraint Violation Error (CRITICAL DB ERROR)
+    // Detects integrity/constraint violation errors in migration output
     if (lowerError.includes('integrityerror') || lowerError.includes('constraint violation') || lowerError.includes('foreign key')) {
       return `
 Migration Failed: Database Constraint Violation.
@@ -40,7 +38,7 @@ Raw Error: \`${error.substring(0, 200)}...\`
 `;
     }
     
-    // 3. Python/Module Loading Error
+    // Detects Python/module loading errors in migration output
     if (lowerError.includes('modulenotfounderror') || lowerError.includes('syntaxerror')) {
       return `
 Migration Failed: Python Execution Error.
@@ -55,16 +53,14 @@ Raw Error: \`${error.substring(0, 200)}...\`
     return `Migration failed: ${error}`;
   }
 
-  /**
-   * Formats test runner output (Exit Code 1) into a concise, readable report.
-   */
+  // Formats test runner output into a concise, readable failure report
   formatTestError(output: string): string {
     const failedTests = this.parseTestOutput(output);
     const failureCount = failedTests.length;
 
     if (failureCount === 0) {
-        // Should not happen if exit code is non-zero, but safe guard.
-        return "Tests failed, but no specific failures were parsed. Check the full log.";
+      // No specific failures parsed, fallback message
+      return "Tests failed, but no specific failures were parsed. Check the full log.";
     }
 
     const failureDetails = failedTests.map(t => `
@@ -85,9 +81,7 @@ The Programmer Agent needs to fix the logic in the reported file(s) before proce
 `;
   }
 
-  /**
-   * Parses test output to extract failure details. (Simplified for reliability)
-   */
+  // Parses test output to extract failure details (compatible with Jest/pytest)
   private parseTestOutput(output: string): ParsedFailure[] {
     const failures: ParsedFailure[] = [];
 

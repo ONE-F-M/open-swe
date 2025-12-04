@@ -1,8 +1,16 @@
-import { MigrationHandler } from '@openswe/cli/src/migration/migration-handler.js';
+import { MigrationHandler } from '../migration/migration-handler.js';
 import { createFrappeSandbox, getClientCount } from './testing-bench-utils.test.js';
 import { benchBackupTool, benchListAppsTool } from '../../../cli/src/tools.js';
 
+
 describe('Migration Rollback (Task 9.2)', () => {
+  /**
+   * Integration Test Requirements:
+   * - Docker must be running and accessible.
+   * - Required environment variables for Frappe/ERPNext Docker setup must be set.
+   * - The test will create a sandboxed site, perform a migration, and validate rollback.
+   * - Only skip if no container is available or required env vars are missing.
+   */
   it('should successfully restore DB state after a migration failure', async () => {
     // 1. Setup Sandbox and Baseline
     const sandbox = await createFrappeSandbox();
@@ -28,11 +36,11 @@ describe('Migration Rollback (Task 9.2)', () => {
 `;
     
     // Use the updated sandbox.writeFile which should handle path access checks
-    await sandbox.writeFile(invalidDocTypePath, invalidDocTypeContent);
+     await sandbox.writeFile(invalidDocTypePath, invalidDocTypeContent);
 
     // 3. Attempt Migration
-    const handler = new MigrationHandler(sandbox, sandbox.site); // Pass sandbox and site name
-    const result = await handler.handlePostCodeChange([invalidDocTypePath]);
+      const handler = new MigrationHandler(sandbox, sandbox.site); // Pass sandbox and site name
+      const result = await handler.handlePostCodeChange([invalidDocTypePath]);
 
     // 4. Validate Failure and Rollback Assertions
     

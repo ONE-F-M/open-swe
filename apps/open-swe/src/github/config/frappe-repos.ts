@@ -25,7 +25,7 @@ export const FRAPPE_REPO_CONFIG: FrappeRepoConfig = {
     ]),
     configurable: {
         "x-github-installation-id": process.env.X_GITHUB_INSTALLATION_ID || "93987691",
-        langgraph_auth_user: { display_name: "samdanikouser" },
+        langgraph_auth_user: { display_name: "onefm_openswe" },
         // Add any other static or env-based config here
     },
     baseBranch: "version-15",

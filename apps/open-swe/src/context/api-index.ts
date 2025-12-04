@@ -1,55 +1,66 @@
+// Root index for Frappe/ERPNext API metadata, used for code intelligence and automation
 export interface FrappeAPIIndex {
-  version: string; // e.g. "frappe-15-erpnext-15"
+  version: string; // API version, e.g. "frappe-15-erpnext-15"
+  platformArchitecture: string; // NEW: Platform architecture (e.g., "x86_64", "arm64")
+  appModuleMap: Record<string, string[]>; // NEW: Map of app names to their modules
   modules: {
     [modulePath: string]: {
-      functions: FunctionSignature[];
-      classes: ClassSignature[];
-      whitelisted: boolean;
+      functions: FunctionSignature[]; // All functions in the module
+      classes: ClassSignature[];     // All classes in the module
+      whitelisted: boolean;          // If module is whitelisted for public API
     };
   };
   doctypes: {
     [doctypeName: string]: {
-      app: "frappe" | "erpnext" | "hrms";
-      schema: DoctypeSchema;
-      controller: string; // Path to .py file
-      hooks: string[]; // Which apps have hooks on this DocType
+      app: "frappe" | "erpnext" | "hrms"; // Owning app
+      schema: DoctypeSchema;                // DocType schema definition
+      controller: string;                   // Path to controller .py file
+      hooks: string[];                      // Apps with hooks on this DocType
     };
   };
   hooks: {
     [hookName: string]: {
-      signature: string;
-      description: string;
-      examples: string[];
+      signature: string;     // Hook function signature
+      description: string;   // Description of the hook
+      examples: string[];    // Example usages
     };
   };
 }
 
+// Describes a function in the Frappe/ERPNext codebase
 export interface FunctionSignature {
   name: string;
-  path: string; // e.g. "frappe.model.document.get_doc"
-  signature: string; // e.g. "def get_doc(doctype: str, name: str) -> Document"
-  docstring: string;
-  whitelisted: boolean;
+  path: string;         // Fully qualified path, e.g. "frappe.model.document.get_doc"
+  signature: string;    // Python signature, e.g. "def get_doc(doctype: str, name: str) -> Document"
+  docstring: string;    // Function docstring
+  whitelisted: boolean; // If function is whitelisted for public API
+  dbTransactionRequired: boolean; // NEW: True if function requires DB transaction
+  raisesException: string[];      // NEW: List of exception names that can be raised
+  isUnitTestHelper: boolean;      // NEW: True if function is a unit test helper
   parameters: Parameter[];
   returnType: string;
 }
 
+// Describes a class in the Frappe/ERPNext codebase
 export interface ClassSignature {
   name: string;
   path: string;
   docstring: string;
-  methods: FunctionSignature[];
+  methods: FunctionSignature[]; // Methods defined on the class
 }
 
+// Schema definition for a Frappe DocType
 export interface DoctypeSchema {
-  fields: Field[];
-  permissions: Permission[];
-  isTable: boolean;
-  isTree: boolean;
-  // --- ADDITION 1: HELPS FILTERING ---
-  accessLevel: 'core' | 'application'; 
+  fields: Field[];                // List of fields in the DocType
+  permissions: Permission[];      // List of permissions for the DocType
+  isTable: boolean;               // True if DocType is a child table
+  isTree: boolean;                // True if DocType is a tree structure
+  accessLevel: 'core' | 'application'; // Used for filtering (core vs app DocTypes)
+  hasClientScript: boolean;      // NEW: True if DocType has a client script
+  creationTimestamp: number;     // NEW: Unix timestamp of DocType creation
 }
 
+// Field definition for a DocType
 export interface Field {
   fieldname: string;
   fieldtype: string;
@@ -59,6 +70,7 @@ export interface Field {
   required?: boolean;
 }
 
+// Permission rule for a DocType
 export interface Permission {
   role: string;
   permlevel: number;
@@ -69,10 +81,10 @@ export interface Permission {
   submit: boolean;
   cancel: boolean;
   amend: boolean;
-  // --- ADDITION 2: HELPS SAFETY CHECKS ---
-  dbWriteAccess: boolean; 
+  dbWriteAccess: boolean; // Used for safety checks
 }
 
+// Function parameter definition
 export interface Parameter {
   name: string;
   type: string;

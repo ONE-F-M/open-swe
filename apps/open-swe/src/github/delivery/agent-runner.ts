@@ -1,7 +1,7 @@
 import { FrappeGitHubAdapter } from "../frappe-github-adapter.js";
 import { FrappeRepoConfig } from "../config/frappe-repos.js";
-import { runAgent } from "../../agents/manager-runner.js";
-import type { AgentExecutionResult as AgentRunResult } from "../../agents/manager-runner.js";
+import { runAgent } from "../../agents/manager/manager-runner.js";
+import type { AgentExecutionResult as AgentRunResult } from "../../agents/manager/manager-runner.js";
 
 export class AgentDeliveryOrchestrator {
     private adapter!: FrappeGitHubAdapter;

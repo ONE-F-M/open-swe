@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
-import { FrappeProgrammerAgent, PlanStep } from "../agents/programmer-agent.js";
-import { PlannerAgent } from "../agents/planner-agent.js"; 
+import { FrappeProgrammerAgent, PlanStep } from "../agents/programmer/programmer-agent.js";
+import { PlannerAgent } from "../agents/planner/planner-agent.js"; 
 import { createFrappeSandbox } from "./testing-bench-utils.test.js";
 import { HumanMessage } from "@langchain/core/messages";
 
@@ -22,21 +22,21 @@ describe('Planner-Programmer End-to-End Integration Test', () => {
     
     // Configuration object required by the Planner Agent graph (passed to loadContext/generatePlan)
     const TEST_CONFIG = {
-        configurable: {
+        configurable: { 
             githubIssueId: TARGET_ISSUE_NUMBER,
-            targetRepository: { owner: "samdanikouser", repo: "one_fm", branch: "version-15" },
+            targetRepository: { owner: process.env.USERNAME || "ONE-F-M", repo: "one_fm", branch: "version-15" },
             "x-github-installation-id": GITHUB_INSTALLATION_ID,
             "x-github-installation-token": GITHUB_INSTALLATION_TOKEN,
-            userLogin: "samdanikouser",
-            "x-github-user-login": "samdanikouser",
-            login: "samdanikouser",
-            GITHUB_USER_LOGIN_HEADER: "samdanikouser",
-            user: "samdanikouser",
-            langgraph_auth_user: { display_name: "samdanikouser" },
+            userLogin: process.env.USERNAME || "ONE-F-M",
+            "x-github-user-login": process.env.USERNAME || "ONE-F-M",
+            login: process.env.USERNAME || "ONE-F-M",
+            GITHUB_USER_LOGIN_HEADER: process.env.USERNAME || "ONE-F-M",
+            user: process.env.USERNAME || "ONE-F-M",
+            langgraph_auth_user: { display_name: process.env.USERNAME || "ONE-F-M" },
             DAYTONA_ORG_ID
         },
         githubIssueId: TARGET_ISSUE_NUMBER,
-        targetRepository: { owner: "samdanikouser", repo: "one_fm", branch: "version-15" },
+        targetRepository: { owner: process.env.USERNAME || "ONE-F-M", repo: "one_fm", branch: "version-15" },
         messages: [new HumanMessage({ content: "Placeholder Task" })]
     };
 

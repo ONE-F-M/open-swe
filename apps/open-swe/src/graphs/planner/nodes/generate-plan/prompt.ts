@@ -1,5 +1,5 @@
 import { GITHUB_WORKFLOWS_PERMISSIONS_PROMPT } from "../../../shared/prompts.js";
-import { FRAPPE_PLANNER_PROMPT } from "../../../../planner/frappe-planner-prompt.js";
+import { FRAPPE_PLANNER_PROMPT } from "../../../../agents/planner/frappe-planner-prompt.js";
 // Merged system prompt for Frappe mode
 export function MERGED_SYSTEM_PROMPT(config: any) {
    let prompt = SYSTEM_PROMPT;

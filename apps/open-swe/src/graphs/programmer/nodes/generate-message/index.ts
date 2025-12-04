@@ -36,7 +36,7 @@ import {
   STATIC_SYSTEM_INSTRUCTIONS,
   CUSTOM_FRAMEWORK_PROMPT,
 } from "./prompt.js";
-import { FRAPPE_PROGRAMMER_INSTRUCTIONS } from "../../../../planner/frappe-programmer-prompt.js";
+import { FRAPPE_PROGRAMMER_INSTRUCTIONS } from "../../../../agents/programmer/frappe-programmer-prompt.js";
 import { getRepoAbsolutePath } from "@openswe/shared/git";
 import { getMissingMessages } from "../../../../utils/github/issue-messages.js";
 import { getPlansFromIssue } from "../../../../utils/github/issue-task.js";

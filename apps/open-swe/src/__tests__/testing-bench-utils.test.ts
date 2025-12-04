@@ -11,7 +11,7 @@ const BENCH_CONTAINER = process.env.BENCH_CONTAINER || 'competent_keldysh';
 
 // --- Sandbox & Execution Helpers ---
 
-interface Sandbox {
+export interface Sandbox {
     execute: (command: string) => Promise<{ stdout: string; exitCode: number; stderr?: string }>;
     writeFile: (relativePath: string, content: string) => Promise<void>;
     readFile: (relativePath: string) => Promise<string>;

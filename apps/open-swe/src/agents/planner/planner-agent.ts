@@ -1,43 +1,42 @@
-// open-swe-planner-agent.ts
-import { graph as plannerGraph } from "../graphs/planner/index.js";
-import { LazyContextLoader } from "../context/lazy-loader.js";
-import { MemorySaver } from "@langchain/langgraph"; // Use MemorySaver for testing
+import { graph as plannerGraph } from "../../graphs/planner/index.js";
+import { LazyContextLoader } from "../../context/lazy-loader.js";
+import { MemorySaver } from "@langchain/langgraph";
 
-
+// PlannerAgent is responsible for generating a step-by-step plan for a given task using an LLM-powered planner graph.
 export class PlannerAgent {
-  sandbox: any;
-  config: any;
-  contextLoader: LazyContextLoader;
-  checkpointer: MemorySaver;
+  sandbox: any; // Sandbox context for the agent
+  config: any;  // Configuration for the agent and planner
+  contextLoader: LazyContextLoader; // Loads required context/modules
+  checkpointer: MemorySaver; // Used for state checkpointing (in-memory)
 
   constructor(sandbox: any, config?: any) {
     this.sandbox = sandbox;
     this.config = config;
     this.contextLoader = new LazyContextLoader();
-    this.checkpointer = new MemorySaver(); // Initialize it
+    this.checkpointer = new MemorySaver();
   }
 
+  // Loads and returns essential context for planning (e.g., preloads modules)
   async loadContext(): Promise<string> {
-    // Preload essential modules using LazyContextLoader
     return await this.contextLoader.preloadEssentials();
   }
 
-
   /**
-   * Invokes the LLM-based Planner Graph to generate a structured plan.
-   * Accepts an optional extraState object for additional fields (e.g., githubIssueId).
+   * Generates a structured plan for the given task using the planner graph.
+   * Merges config and extraState, ensures thread_id, and invokes the planner LLM.
+   * Returns an array of plan steps, each with an actionType and description.
    */
   async generatePlan(task: string, extraState?: Record<string, any>): Promise<any[]> {
-    // Defensive merge: ensure configurable at root, merging config and extraState
+    // Merge config and extraState, ensuring 'configurable' is at the root
     const mergedConfigurable = {
       ...((this.config?.configurable || {})),
       ...((extraState?.configurable || {})),
     };
-    // Ensure thread_id is present and non-empty for checkpointer
+    // Ensure thread_id is present for checkpointing and reproducibility
     if (!mergedConfigurable.thread_id || typeof mergedConfigurable.thread_id !== 'string' || !mergedConfigurable.thread_id.trim()) {
-      // Use a random UUID if not present
       mergedConfigurable.thread_id = `thread_${Math.random().toString(36).slice(2)}_${Date.now()}`;
     }
+    // Initial state for the planner graph invocation
     const initialState = {
       messages: [
         { role: "user", content: task }
@@ -46,22 +45,21 @@ export class PlannerAgent {
       configurable: mergedConfigurable,
     };
 
-    // CRITICAL: Pass configurable directly during invocation
+    // Invoke the planner graph (LLM) to get the plan
     const result = await plannerGraph.invoke(initialState, {
       configurable: mergedConfigurable,
     });
 
     const finalState = result as any;
-    // Debug: Log the full planner output for troubleshooting
-    // eslint-disable-next-line no-console
 
-    // Map plan steps from either finalState.plan or finalState.proposedPlan
+    // Extract plan steps from either 'plan' or 'proposedPlan' fields
     const planArray = Array.isArray(finalState.plan)
       ? finalState.plan
       : Array.isArray(finalState.proposedPlan)
         ? finalState.proposedPlan
         : [];
 
+    // Map each plan step to a structured step object with actionType and description
     if (planArray.length > 0) {
         const steps: any[] = [];
         let stepId = 1;
@@ -74,7 +72,7 @@ export class PlannerAgent {
           }
           steps.push({ actionType, description: step, stepId });
           stepId++;
-          // If this is a code-modifying step, inject a migration step after
+          // After each code-modifying step, inject a migration step
           if (actionType === 'MODIFY_CODE') {
             steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate, clear-cache, and restart for the target site', stepId });
             stepId++;

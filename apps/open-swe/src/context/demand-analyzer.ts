@@ -1,25 +1,26 @@
-// import { FrappeAPISearch } from "./api-search.js";
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+// Structure describing the context requirements for a code generation or analysis task
 export interface ContextDemand {
-  frameworkModules: string[]; // e.g., ["frappe.model.document"]
-  doctypeSchemas: string[];   // e.g., ["Customer", "Sales Invoice"]
-  customAppFiles: string[];   // All files in custom app
-  estimatedTokens: number;
+  frameworkModules: string[]; // List of Frappe framework modules required
+  doctypeSchemas: string[];   // List of DocTypes referenced in the task
+  customAppFiles: string[];   // All Python files in the custom app
+  estimatedTokens: number;    // Estimated total token count for the context
 }
 
-// Define the root of the Frappe bench for file operations (adjust as needed for your sandbox)
+// Root directory of the Frappe bench (can be overridden by BENCH_PATH env variable)
 export const BENCH_ROOT = process.env.BENCH_PATH || '/home/frappe/frappe-bench';
+// Name and path of the custom app to analyze
 const CUSTOM_APP_NAME = "one_fm/one_fm"; 
 const CUSTOM_APP_FOLDER = path.join(BENCH_ROOT, "apps", CUSTOM_APP_NAME); 
 
 export class ContextDemandAnalyzer {
   constructor(
-    // private apiSearch: FrappeAPISearch,
     private taskDescription: string
   ) {}
 
+  // Main entry: Analyze the task and return all context requirements
   async analyze(): Promise<ContextDemand> {
     const demand: ContextDemand = {
       frameworkModules: [],
@@ -28,20 +29,21 @@ export class ContextDemandAnalyzer {
       estimatedTokens: 0,
     };
 
-    // Step 1: Extract mentioned DocTypes from task
+    // Extract DocTypes mentioned in the task description
     const mentionedDoctypes = this.extractDoctypes(this.taskDescription);
     demand.doctypeSchemas = mentionedDoctypes;
 
-    // Step 2: Analyze custom app imports (relies on file reading)
+    // Analyze all custom app files for Frappe framework imports
     const customAppImports = await this.analyzeCustomAppImports();
     demand.frameworkModules = customAppImports;
 
-    // Step 3: Estimate token count
+    // Estimate the total token count for the context
     demand.estimatedTokens = this.estimateTokens(demand);
 
     return demand;
   }
 
+  // Extracts DocType names from the task description using regex patterns
  private extractDoctypes(text: string): string[] {
   // Pattern match common DocType references, supporting multi-word names
   const patterns = [
@@ -60,11 +62,10 @@ export class ContextDemandAnalyzer {
   return Array.from(doctypes);
 }
 
+  // Scans all Python files in the custom app for Frappe framework imports
   private async analyzeCustomAppImports(): Promise<string[]> {
-    // Scan all .py files in custom_app for framework imports
     const imports = new Set<string>();
     
-    // Use the actual file listing method
     const pythonFiles = await this.getPythonFiles(CUSTOM_APP_FOLDER);
 
     for (const file of pythonFiles) {
@@ -79,6 +80,7 @@ export class ContextDemandAnalyzer {
     return Array.from(imports);
   }
 
+  // Extracts Frappe import module paths from Python code
   private extractImports(pythonCode: string): string[] {
     // Parse: from frappe.model.document import get_doc (captures the module path)
     // NOTE: We only care about frappe.* imports, as per the pattern
@@ -87,6 +89,7 @@ export class ContextDemandAnalyzer {
     return Array.from(matches, m => m[1]);
   }
 
+  // Estimates the total token count for the context demand
   private estimateTokens(demand: ContextDemand): number {
     let tokens = 0;
     // Custom app: ~500 tokens per file (average)
@@ -98,14 +101,12 @@ export class ContextDemandAnalyzer {
     return tokens;
   }
 
-  // --- Helpers for file system (Implemented with fs/promises) ---
-
+  // Returns all Python files in the custom app (relative to bench root)
   private async getAllCustomAppFiles(): Promise<string[]> {
-    // Since Python files are the primary source of context, we reuse the Python file finder.
-    // We return paths relative to the bench root for logging consistency.
     return this.getPythonFiles(CUSTOM_APP_FOLDER);
   }
 
+  // Recursively finds all Python files under a directory, skipping hidden and vendor folders
   private async getPythonFiles(startPath: string): Promise<string[]> {
     let results: string[] = [];
     try {
@@ -114,27 +115,24 @@ export class ContextDemandAnalyzer {
         for (const file of files) {
             const fullPath = path.join(startPath, file.name);
             if (file.isDirectory()) {
-                // Ignore hidden directories and common vendor folders
                 if (file.name.startsWith('.') || file.name === 'node_modules' || file.name === 'env') {
                     continue;
                 }
                 results = results.concat(await this.getPythonFiles(fullPath));
             } else if (file.name.endsWith('.py')) {
-                // Return path relative to bench root for consistent analysis/logging
                 results.push(path.relative(BENCH_ROOT, fullPath));
             }
         }
     } catch (e) {
-        // Handle case where directory doesn't exist (e.g., if CUSTOM_APP_FOLDER is wrong)
         console.error(`Error reading directory ${startPath}: ${e}`);
     }
     return results;
   }
 
+  // Reads a file as UTF-8, resolving relative paths from BENCH_ROOT
   private async readFile(filePath: string): Promise<string> {
     // Ensure filePath is absolute; if not, resolve relative to BENCH_ROOT
     const absPath = path.isAbsolute(filePath) ? filePath : path.join(BENCH_ROOT, filePath);
     return fs.readFile(absPath, 'utf-8');
-}
-
+  }
 }

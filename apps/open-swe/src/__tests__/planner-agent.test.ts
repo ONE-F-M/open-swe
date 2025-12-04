@@ -8,7 +8,7 @@ const DAYTONA_ORGANIZATION_ID = process.env.DAYTONA_ORGANIZATION_ID;
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER;
 const USERNAME = process.env.USERNAME;
 
-import { PlannerAgent } from "../agents/planner-agent.js";
+import { PlannerAgent } from "../agents/planner/planner-agent.js";
 import { HumanMessage } from "@langchain/core/messages";
 
 describe("PlannerAgent", () => {
