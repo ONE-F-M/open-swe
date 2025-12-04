@@ -220,3 +220,27 @@ export const benchBackupTool = tool(
 		}),
 	}
 );
+
+export const benchRestartTool = tool(
+	async ({ site, sandbox }: { site: string, sandbox: any }) => {
+		const command = `bench --site ${site} restart`;
+		const result = await executeInSandbox(sandbox, command);
+		if (result.exitCode !== 0) {
+			throw new Error(`Restart failed for site ${site}: ${result.stderr}`);
+		}
+		return {
+			exitCode: result.exitCode,
+			success: true,
+			output: result.stdout,
+			stderr: result.stderr,
+		};
+	},
+	{
+		name: "bench_restart",
+		description: "Run 'bench --site [site] restart' to restart all processes for a Frappe site.",
+		schema: z.object({
+			site: z.string().describe("The Frappe site name (required)"),
+			sandbox: z.any().describe("The active Daytona Sandbox instance (required at runtime)")
+		}),
+	}
+);

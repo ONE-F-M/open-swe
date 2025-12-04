@@ -1,4 +1,4 @@
-import { benchMigrateTool, benchConsoleTool } from '@openswe/cli/src/tools.js';
+import { benchMigrateTool, benchConsoleTool, benchClearCacheTool, benchRestartTool, benchBackupTool } from '@openswe/cli/src/tools.js';
 import { FrappeErrorHandler } from '../../../open-swe/src/error-handler.js';
 import { findLatestBackup } from './find-latest-backup.js';
 // Accept both SDK Sandbox and local test Sandbox for integration tests
@@ -69,6 +69,22 @@ export class MigrationHandler {
           reject(new Error('Migration timed out after 5 minutes'));
         }, MIGRATION_TIMEOUT_MS_CHECK))
       ]);
+
+      // If migration succeeded, run clear-cache and restart
+      if (result && result.success) {
+        try {
+          const clearCacheResult = await benchClearCacheTool.invoke({ site: this.siteName, sandbox: this.sandbox });
+          if (!clearCacheResult.success) {
+            console.warn(`[MigrationHandler] benchClearCacheTool failed.`);
+          }
+          const restartResult = await benchRestartTool.invoke({ site: this.siteName, sandbox: this.sandbox });
+          if (!restartResult.success) {
+            console.warn(`[MigrationHandler] benchRestartTool failed.`);
+          }
+        } catch (e) {
+          console.warn(`[MigrationHandler] benchClearCacheTool or benchRestartTool invocation failed: ${e}`);
+        }
+      }
     } catch (error: any) {
       migrationError = error;
     }
@@ -95,9 +111,11 @@ export class MigrationHandler {
 
   // Creates a database backup for the site before migration
   private async backupSite(): Promise<void> {
-    const command = `bench --site ${this.siteName} backup --only-database`;
     try {
-      await executeInSandbox(this.sandbox as any, command);
+      const backupResult = await benchBackupTool.invoke({ site: this.siteName, sandbox: this.sandbox });
+      if (!backupResult.success) {
+        throw new Error(`Backup failed for site ${this.siteName}`);
+      }
       console.log(`[MigrationHandler] Backup successful for site ${this.siteName}.`);
     } catch (e) {
       const errorMsg = this.errorHandler.formatMigrationError(String(e));
