@@ -1,7 +1,7 @@
 export const TIMEOUT_SEC = 60; // 1 minute
 export const SANDBOX_ROOT_DIR = "/home/frappe/frappe-bench";
 export const DAYTONA_IMAGE_NAME = "samdanionefm/onefmfrappe:version2";
-export const DAYTONA_SNAPSHOT_NAME = "onefm-frappe-bench-golden-v2-1764731634";
+export const DAYTONA_SNAPSHOT_NAME = "onefm-frappe-bench-golden-v2-1764809657";
 export const PLAN_INTERRUPT_DELIMITER = ":::";
 export const PLAN_INTERRUPT_ACTION_TITLE = "Approve/Edit Plan";
 
