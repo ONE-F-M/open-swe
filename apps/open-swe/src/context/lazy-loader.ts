@@ -4,7 +4,7 @@ import { FrappeAPISearch } from "./api-search.js";
 // Singleton cache for FrappeAPISearch instance to avoid repeated expensive initialization
 let cachedApiSearcher: FrappeAPISearch | null = null;
 // Path to the API index JSON file
-const INDEX_PATH = "../../frappe-api-index.json";
+const INDEX_PATH = "/home/frappe/frappe-bench/apps/one_fm/scripts/frappe-api-index.json";
 
 export class LazyContextLoader {
 
@@ -28,12 +28,22 @@ export class LazyContextLoader {
     // Get the singleton API search instance (expensive initialization only once)
     const apiSearch = await this.getFrappeAPISearch();
     // Retrieve the module's code/content from the API index
-    const moduleContent = await apiSearch.getModuleContent(modulePath);
+    let moduleContent = await apiSearch.getModuleContent(modulePath);
 
     // Estimate tokens and check if loading this module would exceed the token budget
-    const estimatedTokens = this.estimateTokens(moduleContent);
+    let estimatedTokens = this.estimateTokens(moduleContent);
+    const HARD_CAP = 10000; // Max tokens per module context
+    if (estimatedTokens > HARD_CAP) {
+      // Truncate: Only include the first and last 40 lines, with a warning
+      const lines = moduleContent.split('\n');
+      const head = lines.slice(0, 40);
+      const tail = lines.slice(-40);
+      moduleContent = head.join('\n') + '\n...\n[TRUNCATED: Module too large, only showing first and last 40 lines]\n' + tail.join('\n');
+      estimatedTokens = this.estimateTokens(moduleContent);
+      console.warn(`[LazyContextLoader] Module ${modulePath} exceeded ${HARD_CAP} tokens. Truncated context.`);
+    }
     if (currentTokenCount + estimatedTokens > maxTokens) {
-      console.warn(`Token budget exceeded. Skipping ${modulePath}`);
+      console.warn(`[LazyContextLoader] Token budget exceeded. Skipping ${modulePath}`);
       return null;
     }
 
@@ -44,11 +54,10 @@ export class LazyContextLoader {
   }
 
   async preloadEssentials(): Promise<string> {
-    // Preload a set of essential core modules for every context (ignores token budget)
+    // Minimized essentials: Only load the bare minimum required for most tasks
     const essential = [
-      "frappe.model.document",
-      "frappe.utils",
-      "frappe.core.doctype.doctype.doctype"
+      "frappe.db",
+      "frappe.throw"
     ];
     let context = "";
     for (const module of essential) {
