@@ -17,36 +17,62 @@ export async function executeInSandbox(
   workDir: string = "/home/frappe/frappe-bench"
 ): Promise<ExecutionResult> {
   const containerName = process.env.DOCKER_CONTAINER || "onefmfrappe-container";
-  const user = "frappe"; // The user running bench commands
+  const user = "frappe";
 
-  // The command must be run as the frappe user, inside the correct directory.
-  const dockerArgs = [
-    'exec',
-    '-u', user,
-    '-w', workDir,
-    containerName,
-    'bash', '-c', command
-  ];
-  console.log(`[executeInSandbox] Running: docker ${dockerArgs.join(' ')}`);
-  try {
-    const result = await execa('docker', dockerArgs);
-    console.log(`[executeInSandbox] Success:`, result);
-    return {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-    };
-  } catch (error) {
-    const execaResult = error as any;
-    console.error(`[executeInSandbox] Command failed: docker ${dockerArgs.join(' ')}`, {
-      stdout: execaResult.stdout,
-      stderr: execaResult.stderr,
-      exitCode: execaResult.exitCode,
-    });
-    return {
-      stdout: execaResult.stdout || "",
-      stderr: execaResult.stderr || execaResult.message,
-      exitCode: execaResult.exitCode || 1,
-    };
+  // If DOCKER_CONTAINER is set, use Docker. Otherwise, run directly (Daytona VM/snapshot mode).
+  if (process.env.DOCKER_CONTAINER) {
+    const dockerArgs = [
+      'exec',
+      '-u', user,
+      '-w', workDir,
+      containerName,
+      'bash', '-c', command
+    ];
+    console.log(`[executeInSandbox] Running: docker ${dockerArgs.join(' ')}`);
+    try {
+      const result = await execa('docker', dockerArgs);
+      console.log(`[executeInSandbox] Success:`, result);
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    } catch (error) {
+      const execaResult = error as any;
+      console.error(`[executeInSandbox] Command failed: docker ${dockerArgs.join(' ')}`, {
+        stdout: execaResult.stdout,
+        stderr: execaResult.stderr,
+        exitCode: execaResult.exitCode,
+      });
+      return {
+        stdout: execaResult.stdout || "",
+        stderr: execaResult.stderr || execaResult.message,
+        exitCode: execaResult.exitCode || 1,
+      };
+    }
+  } else {
+    // Direct execution in Daytona VM/snapshot
+    console.log(`[executeInSandbox] Running directly in sandbox: ${command} (cwd: ${workDir})`);
+    try {
+      const result = await execa('bash', ['-c', command], { cwd: workDir });
+      console.log(`[executeInSandbox] Success:`, result);
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+      };
+    } catch (error) {
+      const execaResult = error as any;
+      console.error(`[executeInSandbox] Command failed (direct): ${command}`, {
+        stdout: execaResult.stdout,
+        stderr: execaResult.stderr,
+        exitCode: execaResult.exitCode,
+      });
+      return {
+        stdout: execaResult.stdout || "",
+        stderr: execaResult.stderr || execaResult.message,
+        exitCode: execaResult.exitCode || 1,
+      };
+    }
   }
 }

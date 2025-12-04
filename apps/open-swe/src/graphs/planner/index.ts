@@ -34,7 +34,11 @@ function takeActionOrGeneratePlan(
 
 function ensureTargetRepository(state: PlannerGraphState & Record<string, any>): PlannerGraphState {
 if (!state.targetRepository) {
-    throw new Error("targetRepository must be provided dynamically in the initial state.");
+  state.targetRepository = {
+    owner: process.env.REPO_OWNER || "ONE-F-M",
+    repo: process.env.REPO_NAME || "one_fm",
+    branch: process.env.REPO_BRANCH || "version-15"
+  };
 }
   if (!state.assistant_id) {
     state.assistant_id = "open-swe-agent"; // set your default assistant id

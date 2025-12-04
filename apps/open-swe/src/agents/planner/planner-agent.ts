@@ -18,6 +18,9 @@ export class PlannerAgent {
 
   // Loads and returns essential context for planning (e.g., preloads modules)
   async loadContext(): Promise<string> {
+    // Debug: No plan available in loadContext, skipping plan log.
+    // No plan variable available in loadContext.
+
     return await this.contextLoader.preloadEssentials();
   }
 
@@ -27,6 +30,8 @@ export class PlannerAgent {
    * Returns an array of plan steps, each with an actionType and description.
    */
   async generatePlan(task: string, extraState?: Record<string, any>): Promise<any[]> {
+      // Unique log to confirm invocation
+      console.log('PLANNER_AGENT_START');
       // Debug: Log the task and extraState
       console.log('[PlannerAgent] Task:', task);
       console.log('[PlannerAgent] extraState:', JSON.stringify(extraState, null, 2));
@@ -46,6 +51,11 @@ export class PlannerAgent {
       ],
       ...extraState,
       configurable: mergedConfigurable,
+      targetRepository: extraState?.targetRepository || this.config?.targetRepository || {
+        owner: process.env.REPO_OWNER || "ONE-F-M",
+        repo: process.env.REPO_NAME || "one_fm",
+        branch: process.env.REPO_BRANCH || "version-15"
+      }
     };
 
     // Invoke the planner graph (LLM) to get the plan
@@ -59,11 +69,41 @@ export class PlannerAgent {
     console.log('[PlannerAgent] Raw plan output:', JSON.stringify(finalState, null, 2));
 
     // Extract plan steps from either 'plan' or 'proposedPlan' fields
-    const planArray = Array.isArray(finalState.plan)
+    let planArray = Array.isArray(finalState.plan)
       ? finalState.plan
       : Array.isArray(finalState.proposedPlan)
         ? finalState.proposedPlan
         : [];
+    console.log('[PlannerAgent] Steps after fallback mapping:', JSON.stringify(planArray, null, 2));
+
+    // Debug: Log the extracted plan array
+    console.log('[PlannerAgent] Extracted planArray:', JSON.stringify(planArray, null, 2));
+
+    // Check if planArray is structured (array of objects with type/actionType)
+    let isStructured = Array.isArray(planArray) && planArray.length > 0 && typeof planArray[0] === 'object' && (planArray[0].type || planArray[0].actionType);
+    if (!isStructured && Array.isArray(planArray) && planArray.length > 0 && typeof planArray[0] === 'string') {
+      // Fallback: convert string steps to structured step objects
+      console.warn('[PlannerAgent] Fallback: Converting string plan steps to structured step objects. Migration steps will be injected.');
+      planArray = planArray.map((step) => {
+        const lowerStep = step.toLowerCase();
+        if (lowerStep.includes('migrate') || lowerStep.includes('bench migrate')) {
+          return { actionType: 'RUN_MIGRATION', description: step };
+        } else if (/validate|test/.test(lowerStep)) {
+          return { actionType: 'VALIDATE_TEST', description: step };
+        } else if (/review/.test(lowerStep)) {
+          return { actionType: 'FINAL_REVIEW', description: step };
+        }
+        return { actionType: 'MODIFY_CODE', description: step };
+      });
+      isStructured = true;
+    } else if (!isStructured) {
+      console.warn('[PlannerAgent] WARNING: Plan is not structured as array of step objects with type/actionType. Attempting robust fallback.');
+      // Robust fallback: If plan is empty or not structured, inject a default MODIFY_CODE step and migration steps
+      planArray = [
+        { actionType: 'MODIFY_CODE', description: 'No valid plan steps found. Default code modification step injected.' },
+      ];
+      isStructured = true;
+    }
 
     // Map each plan step to a structured step object with actionType and description
     if (planArray.length > 0) {
@@ -71,17 +111,19 @@ export class PlannerAgent {
       let stepId = 1;
       for (const step of planArray) {
         let actionType: 'MODIFY_CODE' | 'RUN_MIGRATION' | 'VALIDATE_TEST' | 'FINAL_REVIEW' = 'MODIFY_CODE';
-        if (/validate|test/i.test(step)) {
+        if (typeof step === 'object' && (step.type || step.actionType)) {
+          actionType = step.type || step.actionType;
+        } else if (/validate|test/i.test(step.description || step)) {
           actionType = 'VALIDATE_TEST';
-        } else if (/review/i.test(step)) {
+        } else if (/review/i.test(step.description || step)) {
           actionType = 'FINAL_REVIEW';
         }
-        steps.push({ actionType, description: step, stepId });
+        steps.push({ actionType, description: typeof step === 'string' ? step : step.description || JSON.stringify(step), stepId });
         // Debug: Log each mapped step
-        console.log(`[PlannerAgent] Step ${stepId}:`, { actionType, description: step });
+        console.log(`[PlannerAgent] Step ${stepId}:`, { actionType, description: typeof step === 'string' ? step : step.description || JSON.stringify(step) });
         stepId++;
         // After each code-modifying step, inject migration, clear-cache, and restart steps
-        if (actionType === 'MODIFY_CODE') {
+        if (actionType === 'MODIFY_CODE' && isStructured) {
           steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
           console.log(`[PlannerAgent] Step ${stepId}: Injected RUN_MIGRATION`);
           stepId++;
@@ -92,9 +134,22 @@ export class PlannerAgent {
           console.log(`[PlannerAgent] Step ${stepId}: Injected RESTART_SITE`);
           stepId++;
         }
+        // Always inject clear-cache and restart after any migration step
+        if (actionType === 'RUN_MIGRATION' && isStructured) {
+          steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
+          console.log(`[PlannerAgent] Step ${stepId}: Injected CLEAR_CACHE after RUN_MIGRATION`);
+          stepId++;
+          steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
+          console.log(`[PlannerAgent] Step ${stepId}: Injected RESTART_SITE after RUN_MIGRATION`);
+          stepId++;
+        }
       }
+      // Final debug log before returning
+      console.log('[PlannerAgent] FINAL steps to return:', JSON.stringify(steps, null, 2));
       return steps;
     }
+    // Final debug log for empty steps
+    console.log('[PlannerAgent] FINAL steps to return: []');
     return [];
   }
 }
