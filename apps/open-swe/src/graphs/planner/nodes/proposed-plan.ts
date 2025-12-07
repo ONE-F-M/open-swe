@@ -394,19 +394,38 @@ export async function interruptProposedPlan(
     throw new Error("Unknown interrupt type." + humanResponse.type);
   }
 
-  return await startProgrammerRun({
-    runInput: runInput as Exclude<GraphUpdate, "taskPlan"> & {
-      taskPlan: TaskPlan;
-    },
-    state,
-    config,
-    newMessages: [
-      createAcceptedPlanMessage({
-        planTitle: state.proposedPlanTitle,
-        planItems,
-        interruptType: humanResponse.type,
-        runId: config.configurable?.run_id ?? "",
-      }),
-    ],
-  });
+  try {
+    await startProgrammerRun({
+      runInput: runInput as Exclude<GraphUpdate, "taskPlan"> & {
+        taskPlan: TaskPlan;
+      },
+      state,
+      config,
+      newMessages: [
+        createAcceptedPlanMessage({
+          planTitle: state.proposedPlanTitle,
+          planItems,
+          interruptType: humanResponse.type,
+          runId: config.configurable?.run_id ?? "",
+        }),
+      ],
+    });
+    // Always return END after programmer run
+    return new Command({
+      goto: END,
+      update: {
+        status: 'completed',
+        message: 'Plan applied and workflow ended.'
+      }
+    });
+  } catch (err) {
+    // If programmer/reviewer fails, still end the workflow and log error
+    return new Command({
+      goto: END,
+      update: {
+        status: 'failed',
+        message: 'Plan applied but downstream error: ' + (err && typeof err === 'object' && 'message' in err ? (err as Error).message : String(err))
+      }
+    });
+  }
 }

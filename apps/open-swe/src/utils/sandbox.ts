@@ -184,10 +184,12 @@ export async function getSandboxWithErrorHandling(
     });
 
     // Get codebase tree
+    // You can change "apps/one_fm" and 3 to any directory and depth you want
     const codebaseTree = await getCodebaseTree(
       config,
       sandbox.id,
       targetRepository,
+      2
     );
     const codebaseTreeToReturn =
       codebaseTree === FAILED_TO_GENERATE_TREE_MESSAGE ? null : codebaseTree;

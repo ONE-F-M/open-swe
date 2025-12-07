@@ -131,8 +131,6 @@ except Exception as e:
   2. RUN_MIGRATION: Run bench migrate --skip-failing for the target site
   3. CLEAR_CACHE: Run bench clear-cache for the target site
   4. RESTART_SITE: Run bench restart for the target site
-  5. VALIDATE_TEST: Run tests to verify the change
-  3. VALIDATE_TEST: Run tests to verify the change
 
 **Summary:**
 - After any code/schema change, always emit a \`RUN_MIGRATION\` step.

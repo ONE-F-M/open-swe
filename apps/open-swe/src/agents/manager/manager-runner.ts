@@ -72,8 +72,9 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
         throw new Error("targetRepository (with owner, repo, and branch) must be provided in params for planner agent.");
     }
 
-    // Generate the plan steps for the task, passing relevant context
-    const planSteps = await planner.generatePlan(
+    // Step 2: Robust plan execution with routing logic
+    const programmer = new FrappeProgrammerAgent(sandbox, sandbox?.siteName || "onefm");
+    let plan = await planner.generatePlan(
         taskDescription,
         {
             githubIssueId: issueNumber,
@@ -81,21 +82,45 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
             targetBranch: params.targetBranch,
         }
     );
-
-    // Step 2: Execute each plan step using the programmer agent
-    const programmer = new FrappeProgrammerAgent(sandbox, sandbox?.siteName || "onefm");
-
-    try {
-        for (const step of planSteps) {
-            // Execute each step and collect results for reporting and review
+    let state = { currentStep: 0, completed: false, failed: false, retries: 0 };
+    const MAX_RETRIES = 2;
+    while (!state.completed && !state.failed) {
+        if (state.currentStep >= plan.length) {
+            state.completed = true;
+            break;
+        }
+        const step = plan[state.currentStep];
+        try {
             const stepResult = await programmer.executeStep(step, initialContext);
             if (stepResult?.filesModified) { filesModified = stepResult.filesModified; }
             if (stepResult?.migrationLog) { finalMigrationLog = stepResult.migrationLog; }
             if (stepResult?.testResults) { finalTestResult = stepResult.testResults; }
+            state.currentStep++;
+            state.retries = 0;
+        } catch (e: any) {
+            if (state.retries < MAX_RETRIES) {
+                state.retries++;
+                console.log(`Step ${state.currentStep} failed, retrying (${state.retries}/${MAX_RETRIES})...`);
+                continue;
+            } else {
+                // Optionally, re-plan if step is critical and failed
+                if (step.critical && planner.canReplan) {
+                    console.log(`Step ${state.currentStep} failed after retries, attempting to re-plan...`);
+                    plan = await planner.generatePlan(taskDescription, {
+                        githubIssueId: issueNumber,
+                        targetRepository: targetRepositoryObj,
+                        targetBranch: params.targetBranch,
+                    });
+                    state.currentStep = 0;
+                    state.retries = 0;
+                    continue;
+                }
+                state.failed = true;
+                break;
+            }
         }
-    } catch (e: any) {
-        // If any step fails, log the error and return a failed result with metrics
-        console.error(`[PROGRAMMER ERROR] Task failed during execution: ${e.message}`);
+    }
+    if (state.failed) {
         const metrics = await logger.logFinalMetrics({
             status: 'failed',
             migrationLog: finalMigrationLog || "Migration handler was not run or failed to report log.",
@@ -107,6 +132,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
             migrationsRun: finalMigrationLog ? 1 : 0, 
             testSuccess: false 
         });
+        console.log('Manager session ended with status: failed');
         return {
             status: metrics.status,
             migrationLog: metrics.migrationLog,
@@ -125,10 +151,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
     // Step 3: Review the modified files using the ReviewerAgent
     const reviewer = new ReviewerAgent();
     const reviewPassed = await reviewer.review(filesModified, targetRepositoryObj, params.targetBranch);
-
     if (!reviewPassed) {
-        // If review fails, log metrics and return a failed result
-        console.warn("[MANAGER] Review failed. Code quality checks require iteration.");
         const metrics = await logger.logFinalMetrics({
             status: 'failed',
             migrationLog: finalMigrationLog,
@@ -140,7 +163,7 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
             migrationsRun: finalMigrationLog ? 1 : 0,
             testSuccess: false
         });
-
+        console.log('Manager session ended with status: failed (review did not pass)');
         return {
             status: metrics.status,
             migrationLog: metrics.migrationLog,
@@ -168,7 +191,9 @@ export async function runAgent(params: RunAgentParams): Promise<AgentExecutionRe
         migrationsRun: finalMigrationLog ? 1 : 0, 
         testSuccess: finalTestResult.exitCode === 0
     });
-
+    console.log('Manager session ended with status: completed');
+    // Optionally update session state here if available
+    // session.status = 'completed'; session.endedAt = new Date();
     return {
         status: metrics.status,
         migrationLog: metrics.migrationLog,

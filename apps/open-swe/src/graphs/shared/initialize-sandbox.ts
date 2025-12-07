@@ -189,7 +189,8 @@ export async function initializeSandbox(
       };
       emitStepEvent(baseGenerateCodebaseTreeAction, "pending");
       try {
-        const codebaseTree = await getCodebaseTree(config, existingSandbox.id);
+        // You can change "apps/one_fm" and 3 to any directory and depth you want
+        const codebaseTree = await getCodebaseTree(config, existingSandbox.id, undefined, 2);
         if (codebaseTree === FAILED_TO_GENERATE_TREE_MESSAGE) {
           emitStepEvent(
             baseGenerateCodebaseTreeAction,
@@ -300,19 +301,19 @@ export async function initializeSandbox(
     emitStepEvent(
       baseCloneRepoAction,
       "error",
-      "Failed to clone repository. Please check your repo URL and permissions.",
+      `Failed to clone repository. Error: ${cloneRepoRes.message}`,
     );
-    const errorFields = {
-      ...(cloneRepoRes instanceof Error
-        ? {
-            name: cloneRepoRes.name,
-            message: cloneRepoRes.message,
-            stack: cloneRepoRes.stack,
-          }
-        : cloneRepoRes),
-    };
-    logger.error("Cloning repository failed", errorFields);
-    throw new Error("Failed to clone repository.");
+    // Log all error details, including custom fields
+    logger.error("Cloning repository failed", {
+      name: cloneRepoRes.name,
+      message: cloneRepoRes.message,
+      stack: cloneRepoRes.stack,
+      ...(cloneRepoRes as any),
+    });
+    // Optionally print to console for debugging
+    // eslint-disable-next-line no-console
+    console.error("Clone repo error details:", cloneRepoRes);
+    throw new Error(`Failed to clone repository: ${cloneRepoRes.message}`);
   }
   const newBranchName =
     typeof cloneRepoRes === "string" ? cloneRepoRes : branchName;
@@ -351,7 +352,8 @@ export async function initializeSandbox(
   emitStepEvent(baseGenerateCodebaseTreeAction, "pending");
   let codebaseTree: string | undefined;
   try {
-    codebaseTree = await getCodebaseTree(config, sandbox.id);
+    // You can change "apps/one_fm" and 3 to any directory and depth you want
+    codebaseTree = await getCodebaseTree(config, sandbox.id, undefined, 2);
     emitStepEvent(baseGenerateCodebaseTreeAction, "success");
   } catch (_) {
     emitStepEvent(
@@ -459,7 +461,8 @@ async function initializeSandboxLocal(
 
   let codebaseTree = undefined;
   try {
-    codebaseTree = await getCodebaseTree(config, undefined, targetRepository);
+    // You can change "apps/one_fm" and 3 to any directory and depth you want
+    codebaseTree = await getCodebaseTree(config, undefined, targetRepository, 2);
     emitStepEvent(baseGenerateCodebaseTreeAction, "success");
   } catch (_) {
     emitStepEvent(

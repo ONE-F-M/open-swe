@@ -3,8 +3,8 @@ import { FrappeAPISearch } from "./api-search.js";
 
 // Singleton cache for FrappeAPISearch instance to avoid repeated expensive initialization
 let cachedApiSearcher: FrappeAPISearch | null = null;
-// Path to the API index JSON file
-const INDEX_PATH = "/home/frappe/frappe-bench/apps/one_fm/scripts/frappe-api-index.json";
+// Path to the API index JSON file (can be overridden by environment variable)
+const INDEX_PATH = process.env.FRAPPE_API_INDEX_PATH || "../../frappe-api-index.json";
 
 export class LazyContextLoader {
 
@@ -32,18 +32,23 @@ export class LazyContextLoader {
 
     // Estimate tokens and check if loading this module would exceed the token budget
     let estimatedTokens = this.estimateTokens(moduleContent);
-    const HARD_CAP = 10000; // Max tokens per module context
+    const HARD_CAP = 5000; // Lower max tokens per module context
     if (estimatedTokens > HARD_CAP) {
-      // Truncate: Only include the first and last 40 lines, with a warning
+      // Truncate: Only include the first and last 20 lines, with a warning and summary
       const lines = moduleContent.split('\n');
-      const head = lines.slice(0, 40);
-      const tail = lines.slice(-40);
-      moduleContent = head.join('\n') + '\n...\n[TRUNCATED: Module too large, only showing first and last 40 lines]\n' + tail.join('\n');
+      const head = lines.slice(0, 20);
+      const tail = lines.slice(-20);
+      moduleContent = head.join('\n') + '\n...\n[TRUNCATED: Module too large, only showing first and last 20 lines]\n' + tail.join('\n') + `\n[Summary: Module ${modulePath} is too large. See documentation for details.]`;
       estimatedTokens = this.estimateTokens(moduleContent);
-      console.warn(`[LazyContextLoader] Module ${modulePath} exceeded ${HARD_CAP} tokens. Truncated context.`);
+      // Only log if not in production
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[LazyContextLoader] Module ${modulePath} exceeded ${HARD_CAP} tokens. Truncated context.`);
+      }
     }
     if (currentTokenCount + estimatedTokens > maxTokens) {
-      console.warn(`[LazyContextLoader] Token budget exceeded. Skipping ${modulePath}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`[LazyContextLoader] Token budget exceeded. Skipping ${modulePath}`);
+      }
       return null;
     }
 

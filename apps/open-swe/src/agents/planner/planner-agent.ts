@@ -8,12 +8,14 @@ export class PlannerAgent {
   config: any;  // Configuration for the agent and planner
   contextLoader: LazyContextLoader; // Loads required context/modules
   checkpointer: MemorySaver; // Used for state checkpointing (in-memory)
+  canReplan: boolean; // Whether replanning is allowed
 
   constructor(sandbox: any, config?: any) {
     this.sandbox = sandbox;
     this.config = config;
     this.contextLoader = new LazyContextLoader();
     this.checkpointer = new MemorySaver();
+    this.canReplan = true; // Default to true, can be set via config or externally
   }
 
   // Loads and returns essential context for planning (e.g., preloads modules)
@@ -65,8 +67,6 @@ export class PlannerAgent {
 
     const finalState = result as any;
 
-    // Debug: Log the raw plan output
-    console.log('[PlannerAgent] Raw plan output:', JSON.stringify(finalState, null, 2));
 
     // Extract plan steps from either 'plan' or 'proposedPlan' fields
     let planArray = Array.isArray(finalState.plan)
@@ -74,16 +74,12 @@ export class PlannerAgent {
       : Array.isArray(finalState.proposedPlan)
         ? finalState.proposedPlan
         : [];
-    console.log('[PlannerAgent] Steps after fallback mapping:', JSON.stringify(planArray, null, 2));
 
-    // Debug: Log the extracted plan array
-    console.log('[PlannerAgent] Extracted planArray:', JSON.stringify(planArray, null, 2));
 
     // Check if planArray is structured (array of objects with type/actionType)
     let isStructured = Array.isArray(planArray) && planArray.length > 0 && typeof planArray[0] === 'object' && (planArray[0].type || planArray[0].actionType);
     if (!isStructured && Array.isArray(planArray) && planArray.length > 0 && typeof planArray[0] === 'string') {
       // Fallback: convert string steps to structured step objects
-      console.warn('[PlannerAgent] Fallback: Converting string plan steps to structured step objects. Migration steps will be injected.');
       planArray = planArray.map((step) => {
         const lowerStep = step.toLowerCase();
         if (lowerStep.includes('migrate') || lowerStep.includes('bench migrate')) {
@@ -97,7 +93,6 @@ export class PlannerAgent {
       });
       isStructured = true;
     } else if (!isStructured) {
-      console.warn('[PlannerAgent] WARNING: Plan is not structured as array of step objects with type/actionType. Attempting robust fallback.');
       // Robust fallback: If plan is empty or not structured, inject a default MODIFY_CODE step and migration steps
       planArray = [
         { actionType: 'MODIFY_CODE', description: 'No valid plan steps found. Default code modification step injected.' },
@@ -109,7 +104,8 @@ export class PlannerAgent {
     if (planArray.length > 0) {
       const steps: any[] = [];
       let stepId = 1;
-      for (const step of planArray) {
+      for (let i = 0; i < planArray.length; i++) {
+        const step = planArray[i];
         let actionType: 'MODIFY_CODE' | 'RUN_MIGRATION' | 'VALIDATE_TEST' | 'FINAL_REVIEW' = 'MODIFY_CODE';
         if (typeof step === 'object' && (step.type || step.actionType)) {
           actionType = step.type || step.actionType;
@@ -118,38 +114,52 @@ export class PlannerAgent {
         } else if (/review/i.test(step.description || step)) {
           actionType = 'FINAL_REVIEW';
         }
-        steps.push({ actionType, description: typeof step === 'string' ? step : step.description || JSON.stringify(step), stepId });
-        // Debug: Log each mapped step
-        console.log(`[PlannerAgent] Step ${stepId}:`, { actionType, description: typeof step === 'string' ? step : step.description || JSON.stringify(step) });
+        const description = typeof step === 'string' ? step : step.description || JSON.stringify(step);
+        steps.push({ actionType, description, stepId });
         stepId++;
         // After each code-modifying step, inject migration, clear-cache, and restart steps
         if (actionType === 'MODIFY_CODE' && isStructured) {
-          steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
-          console.log(`[PlannerAgent] Step ${stepId}: Injected RUN_MIGRATION`);
-          stepId++;
-          steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
-          console.log(`[PlannerAgent] Step ${stepId}: Injected CLEAR_CACHE`);
-          stepId++;
-          steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
-          console.log(`[PlannerAgent] Step ${stepId}: Injected RESTART_SITE`);
-          stepId++;
+          // Post-processing: If this MODIFY_CODE step touches a .json file and the next step is not RUN_MIGRATION, inject it
+          const touchesSchema = /\.json/.test(description);
+          const nextStep = planArray[i + 1];
+          const nextActionType = nextStep && (nextStep.type || nextStep.actionType);
+          if (touchesSchema && nextActionType !== 'RUN_MIGRATION') {
+            steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
+            stepId++;
+            steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
+            stepId++;
+            steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
+            stepId++;
+          } else if (!touchesSchema) {
+            steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
+            stepId++;
+            steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
+            stepId++;
+            steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
+            stepId++;
+          }
         }
         // Always inject clear-cache and restart after any migration step
         if (actionType === 'RUN_MIGRATION' && isStructured) {
           steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
-          console.log(`[PlannerAgent] Step ${stepId}: Injected CLEAR_CACHE after RUN_MIGRATION`);
           stepId++;
           steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
-          console.log(`[PlannerAgent] Step ${stepId}: Injected RESTART_SITE after RUN_MIGRATION`);
           stepId++;
         }
       }
-      // Final debug log before returning
-      console.log('[PlannerAgent] FINAL steps to return:', JSON.stringify(steps, null, 2));
+      // Final post-processing: If any MODIFY_CODE step touched a .json file and no RUN_MIGRATION step exists, inject it at the end
+      const hasMigration = steps.some(s => s.actionType === 'RUN_MIGRATION');
+      const touchedSchema = steps.some(s => s.actionType === 'MODIFY_CODE' && /\.json/.test(s.description));
+      if (touchedSchema && !hasMigration) {
+        steps.push({ actionType: 'RUN_MIGRATION', description: 'Run bench migrate --skip-failing for the target site', stepId });
+        stepId++;
+        steps.push({ actionType: 'CLEAR_CACHE', description: 'Run bench clear-cache for the target site', stepId });
+        stepId++;
+        steps.push({ actionType: 'RESTART_SITE', description: 'Run bench restart for the target site', stepId });
+        stepId++;
+      }
       return steps;
     }
-    // Final debug log for empty steps
-    console.log('[PlannerAgent] FINAL steps to return: []');
     return [];
   }
 }

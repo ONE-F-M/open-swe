@@ -146,40 +146,61 @@ export async function getChangedFilesStatus(
   return parseGitStatusOutput(gitStatusOutput.result);
 }
 
-export async function stashAndClearChanges(
-  absoluteRepoDir: string,
-  sandbox: Sandbox | null,
-  config?: GraphConfig,
-): Promise<ExecuteResponse | false> {
-  // In local mode, we don't want to stash and clear changes
-  if (config && isLocalMode(config)) {
-    logger.info("Skipping stash and clear changes in local mode");
-    return {
-      exitCode: 0,
-      result: "Skipped stash and clear in local mode",
-    };
+export async function pushEmptyCommit(
+  targetRepository: TargetRepository,
+  sandbox: Sandbox,
+  config: GraphConfig,
+  options: {
+    githubInstallationToken: string;
+  },
+) {
+  const botAppName = process.env.GITHUB_APP_NAME;
+  if (!botAppName) {
+    logger.error("GITHUB_APP_NAME environment variable is not set.");
+    throw new Error("GITHUB_APP_NAME environment variable is not set.");
   }
+  const userName = `${botAppName}[bot]`;
+  const userEmail = `${botAppName}@users.noreply.github.com`;
 
   try {
-    // Use unified shell executor
+    const absoluteRepoDir = getRepoAbsolutePath(targetRepository);
     const executor = createShellExecutor(config);
-    const gitStashOutput = await executor.executeCommand({
-      command: "git add -A && git stash && git reset --hard",
+    const setGitConfigRes = await executor.executeCommand({
+      command: `git config user.name "${userName}" && git config user.email "${userEmail}"`,
       workdir: absoluteRepoDir,
       timeout: TIMEOUT_SEC,
-      sandbox: sandbox || undefined,
     });
-
-    if (gitStashOutput.exitCode !== 0) {
-      logger.error(`Failed to stash and clear changes`, {
-        gitStashOutput,
+    if (setGitConfigRes.exitCode !== 0) {
+      logger.error(`Failed to set git config`, {
+        exitCode: setGitConfigRes.exitCode,
+        result: setGitConfigRes.result,
       });
+      return;
     }
-    return gitStashOutput;
+
+    const emptyCommitRes = await executor.executeCommand({
+      command: "git commit --allow-empty -m 'Empty commit to trigger CI'",
+      workdir: absoluteRepoDir,
+      timeout: TIMEOUT_SEC,
+    });
+    if (emptyCommitRes.exitCode !== 0) {
+      logger.error(`Failed to push empty commit`, {
+        exitCode: emptyCommitRes.exitCode,
+        result: emptyCommitRes.result,
+      });
+      return;
+    }
+
+    await sandbox.git.push(
+      absoluteRepoDir,
+      "git",
+      options.githubInstallationToken,
+    );
+
+    logger.info("Successfully pushed empty commit");
   } catch (e) {
-    // Unified error handling
     const errorFields = getSandboxErrorFields(e);
-    logger.error(`Failed to stash and clear changes`, {
+    logger.error(`Failed to push empty commit`, {
       ...(errorFields && { errorFields }),
       ...(e instanceof Error && {
         name: e.name,
@@ -187,10 +208,8 @@ export async function stashAndClearChanges(
         stack: e.stack,
       }),
     });
-    return errorFields ?? false;
   }
 }
-
 function constructCommitMessage(): string {
   const baseCommitMessage = "Apply patch";
   const skipCiString = "[skip ci]";
@@ -382,61 +401,37 @@ export async function checkoutBranchAndCommit(
   return { branchName, updatedTaskPlan };
 }
 
-export async function pushEmptyCommit(
-  targetRepository: TargetRepository,
-  sandbox: Sandbox,
-  config: GraphConfig,
-  options: {
-    githubInstallationToken: string;
-  },
-) {
-  const botAppName = process.env.GITHUB_APP_NAME;
-  if (!botAppName) {
-    logger.error("GITHUB_APP_NAME environment variable is not set.");
-    throw new Error("GITHUB_APP_NAME environment variable is not set.");
+export async function stashAndClearChanges(
+  absoluteRepoDir: string,
+  sandbox: Sandbox | null,
+  config?: GraphConfig,
+): Promise<ExecuteResponse | false> {
+  // In local mode, we don't want to stash and clear changes
+  if (config && isLocalMode(config)) {
+    logger.info("Skipping stash and clear changes in local mode");
+    return false;
   }
-  const userName = `${botAppName}[bot]`;
-  const userEmail = `${botAppName}@users.noreply.github.com`;
-
   try {
-    const absoluteRepoDir = getRepoAbsolutePath(targetRepository);
+    // ...existing code for stashing and clearing changes...
+    // Example:
     const executor = createShellExecutor(config);
-    const setGitConfigRes = await executor.executeCommand({
-      command: `git config user.name "${userName}" && git config user.email "${userEmail}"`,
+    const gitStashOutput = await executor.executeCommand({
+      command: "git stash --include-untracked && git clean -fd",
       workdir: absoluteRepoDir,
       timeout: TIMEOUT_SEC,
+      sandbox: sandbox || undefined,
     });
-    if (setGitConfigRes.exitCode !== 0) {
-      logger.error(`Failed to set git config`, {
-        exitCode: setGitConfigRes.exitCode,
-        result: setGitConfigRes.result,
+
+    if (gitStashOutput.exitCode !== 0) {
+      logger.error(`Failed to stash and clear changes`, {
+        gitStashOutput,
       });
-      return;
     }
-
-    const emptyCommitRes = await executor.executeCommand({
-      command: "git commit --allow-empty -m 'Empty commit to trigger CI'",
-      workdir: absoluteRepoDir,
-      timeout: TIMEOUT_SEC,
-    });
-    if (emptyCommitRes.exitCode !== 0) {
-      logger.error(`Failed to push empty commit`, {
-        exitCode: emptyCommitRes.exitCode,
-        result: emptyCommitRes.result,
-      });
-      return;
-    }
-
-    await sandbox.git.push(
-      absoluteRepoDir,
-      "git",
-      options.githubInstallationToken,
-    );
-
-    logger.info("Successfully pushed empty commit");
+    return gitStashOutput;
   } catch (e) {
+    // Unified error handling
     const errorFields = getSandboxErrorFields(e);
-    logger.error(`Failed to push empty commit`, {
+    logger.error(`Failed to stash and clear changes`, {
       ...(errorFields && { errorFields }),
       ...(e instanceof Error && {
         name: e.name,
@@ -444,6 +439,7 @@ export async function pushEmptyCommit(
         stack: e.stack,
       }),
     });
+    return errorFields ?? false;
   }
 }
 
@@ -520,12 +516,21 @@ async function performClone(
     githubInstallationToken: string;
   },
 ): Promise<string> {
-  const {
+  let {
     branchName,
     targetRepository,
     absoluteRepoDir,
     githubInstallationToken,
   } = args;
+
+  // Ensure branchName is always a string
+  if (!branchName) {
+    if (targetRepository.branch) {
+      branchName = targetRepository.branch;
+    } else {
+      throw new Error("Branch name is required");
+    }
+  }
   logger.info("Cloning repository", {
     repoPath: `${targetRepository.owner}/${targetRepository.repo}`,
     branch: branchName,
@@ -538,89 +543,181 @@ async function performClone(
     );
   }
 
-  const branchExists = branchName
-    ? !!(await getBranch({
-        owner: targetRepository.owner,
-        repo: targetRepository.repo,
+
+  // Retry branch creation/check logic up to 3 times
+  let attempt = 0;
+  while (attempt < 3) {
+    // Check if branch exists on remote
+    const branchExists = branchName
+      ? !!(await getBranch({
+          owner: targetRepository.owner,
+          repo: targetRepository.repo,
+          branchName,
+          githubInstallationToken,
+        }))
+      : false;
+
+    if (branchExists) {
+      logger.info("Branch already exists on remote. Cloning existing branch.", {
+        branch: branchName,
+        attempt,
+      });
+      await sandbox.git.clone(
+        cloneUrl,
+        absoluteRepoDir,
         branchName,
+        undefined,
+        "git",
         githubInstallationToken,
-      }))
-    : false;
+      );
+      logger.info("Successfully cloned repository", {
+        repoPath: `${targetRepository.owner}/${targetRepository.repo}`,
+        branch: branchName,
+        baseCommit: targetRepository.baseCommit,
+        attempt,
+      });
+      return branchName;
+    }
 
-  if (branchExists) {
-    logger.info("Branch already exists on remote. Cloning existing branch.", {
+    // Branch does not exist: clone base branch, create new branch, push to remote
+    logger.info("Branch does not exist. Cloning base branch and creating new branch.", {
       branch: branchName,
+      baseBranch: targetRepository.branch,
+      baseCommit: targetRepository.baseCommit,
+      attempt,
     });
-  }
+    await sandbox.git.clone(
+      cloneUrl,
+      absoluteRepoDir,
+      targetRepository.branch,
+      targetRepository.baseCommit,
+      "git",
+      githubInstallationToken,
+    );
+    logger.info("Successfully cloned base branch", {
+      repoPath: `${targetRepository.owner}/${targetRepository.repo}`,
+      branch: targetRepository.branch,
+      baseCommit: targetRepository.baseCommit,
+      attempt,
+    });
 
-  await sandbox.git.clone(
+    if (!branchName) {
+      throw new Error("Branch name is required");
+    }
+
+    // Create new branch locally
+    try {
+      logger.info("Creating new branch locally", {
+        branch: branchName,
+        attempt,
+      });
+      await sandbox.git.createBranch(absoluteRepoDir, branchName);
+      logger.info("Created new branch locally", {
+        branch: branchName,
+        attempt,
+      });
+    } catch (error) {
+      logger.error("Failed to create branch locally", {
+        branch: branchName,
+        attempt,
+        error:
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                code: (error as any).code,
+                errno: (error as any).errno,
+                syscall: (error as any).syscall,
+                details: error,
+              }
+            : String(error),
+        cloneUrl,
+        absoluteRepoDir,
+        env: process.env,
+      });
+      // Continue even if branch creation fails, to avoid aborting the workflow
+    }
+
+    // Push new branch to remote
+    try {
+      logger.info("Pushing new branch to remote", {
+        branch: branchName,
+        attempt,
+      });
+      await sandbox.git.push(absoluteRepoDir, "git", githubInstallationToken);
+      logger.info("Pushed new branch to remote", {
+        branch: branchName,
+        attempt,
+      });
+    } catch (error) {
+      logger.error("Failed to push new branch to remote", {
+        branch: branchName,
+        attempt,
+        error:
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack,
+                code: (error as any).code,
+                errno: (error as any).errno,
+                syscall: (error as any).syscall,
+                details: error,
+              }
+            : String(error),
+        cloneUrl,
+        absoluteRepoDir,
+        env: process.env,
+      });
+      // Continue even if push fails, to avoid aborting the workflow
+    }
+
+    // Re-check if branch exists after creation/push
+    const branchNowExists = branchName
+      ? !!(await getBranch({
+          owner: targetRepository.owner,
+          repo: targetRepository.repo,
+          branchName,
+          githubInstallationToken,
+        }))
+      : false;
+    if (branchNowExists) {
+      logger.info("Branch confirmed on remote after creation/push.", {
+        branch: branchName,
+        attempt,
+      });
+      await sandbox.git.clone(
+        cloneUrl,
+        absoluteRepoDir,
+        branchName,
+        undefined,
+        "git",
+        githubInstallationToken,
+      );
+      logger.info("Successfully cloned repository after branch creation.", {
+        repoPath: `${targetRepository.owner}/${targetRepository.repo}`,
+        branch: branchName,
+        baseCommit: targetRepository.baseCommit,
+        attempt,
+      });
+      return branchName;
+    }
+
+    logger.warn("Branch still not found after creation/push, will retry.", {
+      branch: branchName,
+      attempt,
+    });
+    attempt++;
+  }
+  logger.error("Failed to create and confirm branch after 3 attempts", {
+    branch: branchName,
     cloneUrl,
     absoluteRepoDir,
-    branchExists ? branchName : targetRepository.branch,
-    branchExists ? undefined : targetRepository.baseCommit,
-    "git",
-    githubInstallationToken,
-  );
-
-  logger.info("Successfully cloned repository", {
-    repoPath: `${targetRepository.owner}/${targetRepository.repo}`,
-    branch: branchName,
-    baseCommit: targetRepository.baseCommit,
+    env: process.env,
+    targetRepository,
   });
-
-  if (targetRepository.baseCommit) {
-    return targetRepository.baseCommit;
-  }
-
-  if (!branchName) {
-    throw new Error("Branch name is required");
-  }
-
-  if (branchExists) {
-    return branchName;
-  }
-
-  try {
-    logger.info("Creating branch", {
-      branch: branchName,
-    });
-
-    await sandbox.git.createBranch(absoluteRepoDir, branchName);
-
-    logger.info("Created branch", {
-      branch: branchName,
-    });
-  } catch (error) {
-    logger.error("Failed to create branch, checking out branch", {
-      branch: branchName,
-      error:
-        error instanceof Error
-          ? { name: error.name, message: error.message }
-          : String(error),
-    });
-  }
-
-  try {
-    // push an empty commit so that the branch exists in the remote
-    logger.info("Pushing empty commit to remote", {
-      branch: branchName,
-    });
-    await sandbox.git.push(absoluteRepoDir, "git", githubInstallationToken);
-
-    logger.info("Pushed empty commit to remote", {
-      branch: branchName,
-    });
-  } catch (error) {
-    logger.error("Failed to push an empty commit to branch", {
-      branch: branchName,
-      error:
-        error instanceof Error
-          ? { name: error.name, message: error.message }
-          : String(error),
-    });
-  }
-
-  return branchName;
+  throw new Error(`Failed to create and confirm branch '${branchName}' after 3 attempts.`);
 }
 
 export interface CheckoutFilesOptions {
