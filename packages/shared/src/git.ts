@@ -19,5 +19,5 @@ export function getRepoAbsolutePath(
     throw new Error("No repository name provided");
   }
 
-  return `${SANDBOX_ROOT_DIR}/apps/${repoName}`;
+  return `${SANDBOX_ROOT_DIR}/${repoName}`;
 }
