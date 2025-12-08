@@ -46,6 +46,7 @@ import {
 import { getRepoAbsolutePath } from "@openswe/shared/git";
 import { GITHUB_USER_LOGIN_HEADER } from "@openswe/shared/constants";
 import { shouldCreateIssue } from "../../../utils/should-create-issue.js";
+import { getRelevantCustomRules } from "../../../utils/custom-rules.js";
 
 const logger = createLogger(LogLevel.INFO, "Open PR");
 
@@ -81,8 +82,10 @@ const formatPrompt = (
   customRules?: CustomRules,
 ): string => {
   const completedTasks = taskPlan.filter((task) => task.completed);
-  const customPrFormattingRules = customRules?.pullRequestFormatting
-    ? formatCustomRulesPrompt(customRules.pullRequestFormatting)
+  // Use only relevant PR formatting rules
+  const filteredRules = getRelevantCustomRules("pull request", customRules ?? {});
+  const customPrFormattingRules = filteredRules.pullRequestFormatting
+    ? formatCustomRulesPrompt(filteredRules.pullRequestFormatting)
     : "";
   return openPrSysPrompt
     .replace("{COMPLETED_TASKS}", formatPlanPromptWithSummaries(completedTasks))

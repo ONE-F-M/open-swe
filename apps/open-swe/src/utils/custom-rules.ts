@@ -268,3 +268,100 @@ export function formatCustomRulesPrompt(
         : "",
     );
 }
+
+
+/**
+ * Filters custom rules by keyword for dynamic injection.
+ * @param keyword - The keyword for the rule type (e.g., "plan", "message", "review actions", "pull request")
+ * @param customRules - The full custom rules object
+ * @returns Filtered custom rules object
+ */
+export function getRelevantCustomRules(keyword: string, customRules: any): any {
+  if (!customRules) return {};
+  const result: any = {};
+  if (keyword === "plan" && customRules.plan) {
+    result.plan = customRules.plan;
+  }
+  if (keyword === "message" && customRules.message) {
+    result.message = customRules.message;
+  }
+  if (keyword === "review actions" && customRules.reviewActions) {
+    result.reviewActions = customRules.reviewActions;
+  }
+  if (keyword === "pull request" && customRules.pullRequestFormatting) {
+    result.pullRequestFormatting = customRules.pullRequestFormatting;
+  }
+  return result;
+}
+
+// Frappe-specific rules for dynamic context injection
+export const FRAPPE_RULES = [
+  {
+    tag: "SECURITY",
+    keywords: ["sql", "injection", "permission", "whitelist"],
+    content: `### SQL Injection Prevention: NEVER use string formatting...
+              @frappe.whitelist() MUST check permissions explicitly...`
+  },
+  {
+    tag: "NAMING",
+    keywords: ["doctype", "field", "naming", "snake_case"],
+    content: `### Naming Conventions: DocType must be Title Case. Field names must be snake_case...`
+  },
+  {
+    tag: "DOCTYPES",
+    keywords: ["doctype", "fields", "json", "migrate", "schema"],
+    content: `### DocType Design: Changes require editing the .json file and running bench migrate...`
+  },
+  {
+    tag: "TESTING",
+    keywords: ["test", "unittest", "FrappeTestCase", "coverage"],
+    content: `### Testing Requirements: ALL custom code must use FrappeTestCase...`
+  },
+  {
+  tag: "API_FILE_PATH",
+  keywords: ["api", "endpoint", "whitelist", "api.py"],
+  content: `ALWAYS use api/api.py for all API endpoints. Do not create separate files for each domain.`
+}
+  // ... add more sections for caching, stock, accounting, etc. as needed
+];
+
+/**
+ * Combines structured CustomRules and unstructured FRAPPE_RULES for context-aware prompt injection.
+ * Filters by keyword and task description, always includes critical security rules.
+ */
+export function getCombinedRelevantRules(
+  keyword: string,
+  customRules: CustomRules | undefined,
+  taskDescription: string,
+  frappeRules: Array<{ tag: string; keywords: string[]; content: string }>
+): string {
+  let relevantContext = "";
+
+  // Structured rules (CustomRules object)
+  const structured = getRelevantCustomRules(keyword, customRules);
+  if (structured && Object.values(structured).length) {
+    relevantContext += "\n--- [CUSTOM RULES] ---\n";
+    for (const section of Object.values(structured)) {
+      relevantContext += section + "\n";
+    }
+  }
+
+  // Unstructured rules (FRAPPE_RULES array)
+  const lowerCaseTask = taskDescription.toLowerCase();
+  for (const rule of frappeRules) {
+    const isRelevant =
+      rule.keywords.some(keyword => lowerCaseTask.includes(keyword)) ||
+      (rule.tag === "DOCTYPES" && lowerCaseTask.includes("doctype"));
+    if (isRelevant) {
+      relevantContext += `\n--- [CONTEXT: ${rule.tag}] ---\n${rule.content}`;
+    }
+  }
+
+  // Always include critical security rules
+  const essentialSecurity = frappeRules.find(r => r.tag === "SECURITY")?.content || "";
+  if (!relevantContext.includes(essentialSecurity)) {
+    relevantContext = `\n--- [CRITICAL SECURITY OVERRIDE] ---\n${essentialSecurity}\n${relevantContext}`;
+  }
+
+  return relevantContext.trim();
+}

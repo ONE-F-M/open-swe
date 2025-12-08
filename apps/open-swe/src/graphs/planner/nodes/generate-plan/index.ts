@@ -14,12 +14,12 @@ import {
 } from "@openswe/shared/open-swe/planner/types";
 import { formatUserRequestPrompt } from "../../../../utils/user-request.js";
 import {
-  formatFollowupMessagePrompt,
-  isFollowupRequest,
+  // formatFollowupMessagePrompt,
+  // isFollowupRequest,
 } from "../../utils/followup.js";
 import { stopSandbox } from "../../../../utils/sandbox.js";
 import { z } from "zod";
-import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
+import { formatCustomRulesPrompt, getRelevantCustomRules } from "../../../../utils/custom-rules.js";
 import { getScratchpad } from "../../utils/scratchpad-notes.js";
 import {
   SCRATCHPAD_PROMPT,
@@ -37,32 +37,28 @@ function formatSystemPrompt(
   state: PlannerGraphState,
   config: GraphConfig,
 ): string {
-  const isFollowup = isFollowupRequest(state.taskPlan, state.proposedPlan);
   const scratchpad = getScratchpad(state.messages)
     .map((n) => `- ${n}`)
     .join("\n");
   // Use merged Frappe prompt if frappeMode is enabled
   let prompt = MERGED_SYSTEM_PROMPT(config);
-  prompt = prompt.replace(
-    "{FOLLOWUP_MESSAGE_PROMPT}",
-    isFollowup
-      ? "\n" +
-          formatFollowupMessagePrompt(state.taskPlan, state.proposedPlan) +
-          "\n\n"
-      : "",
-  )
-    .replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
-    .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
-    .replaceAll(
-      "{SCRATCHPAD}",
-      scratchpad.length
-        ? SCRATCHPAD_PROMPT.replace("{SCRATCHPAD}", scratchpad)
-        : "",
-    )
-    .replace(
-      "{ADDITIONAL_INSTRUCTIONS}",
-      shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
-    );
+    // Use only relevant plan rules
+    const filteredRules = getRelevantCustomRules("plan", state.customRules ?? {});
+    const customPlanRules = filteredRules.plan
+      ? formatCustomRulesPrompt(filteredRules.plan)
+      : "";
+    prompt = prompt.replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
+      .replace("{CUSTOM_RULES}", customPlanRules)
+      .replaceAll(
+        "{SCRATCHPAD}",
+        scratchpad.length
+          ? SCRATCHPAD_PROMPT.replace("{SCRATCHPAD}", scratchpad)
+          : "",
+      )
+      .replace(
+        "{ADDITIONAL_INSTRUCTIONS}",
+        shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
+      );
   return prompt;
 }
 

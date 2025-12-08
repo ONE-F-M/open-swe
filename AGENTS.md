@@ -9,6 +9,9 @@
 - Build the shared package first before other packages can consume it (yarn build from the root handles this automatically via turbo repo)
 - Follow existing code patterns and maintain consistency with the established architecture
 - Include as few inline comments as possible
+-ALWAYS create or update API endpoints in the file path: api/api.py.
+Do NOT create separate files for each domain or feature.
+All whitelisted methods and API logic must be placed in api/api.py.
 </general_rules>
 
 <repository_structure>
