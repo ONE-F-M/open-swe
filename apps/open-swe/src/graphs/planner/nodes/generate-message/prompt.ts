@@ -1,7 +1,4 @@
-export function MERGED_SYSTEM_PROMPT(config: any) {
-    if (!config?.configurable?.frappeMode) {
-        return DEFAULT_SYSTEM_PROMPT;
-    }
+export function MERGED_SYSTEM_PROMPT() {
     return DEFAULT_SYSTEM_PROMPT.replace('{CUSTOM_RULES}', FRAPPE_PLANNER_PROMPT)
         // Leave other placeholders for external logic to fill.
         .replace(/{EXTERNAL_FRAMEWORK_DOCUMENTATION_PROMPT}|{EXTERNAL_FRAMEWORK_PLAN_PROMPT}|{DEV_SERVER_PROMPT}/g, (match) => match);

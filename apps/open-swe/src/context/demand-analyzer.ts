@@ -45,18 +45,20 @@ export class ContextDemandAnalyzer {
 
   // Extracts DocType names from the task description using regex patterns
  private extractDoctypes(text: string): string[] {
-  // Pattern match common DocType references, supporting multi-word names
+  // Optimized regex patterns for DocType references
   const patterns = [
-    /add (?:a )?(?:custom )?field [^']*'[^']+' to ([\w ]+) DocType/gi,
-    /modify ([\w ]+) DocType/gi,
-    /([\w ]+ Invoice)/gi,
-    /([\w ]+ Order)/gi,
+    /(?:add|modify)\s+(?:a\s+)?(?:custom\s+)?field\s+[^']*'[^']+'\s+to\s+([\w ]+?)\s+DocType/gi,
+    /(?:modify|add)\s+([\w ]+?)\s+DocType/gi,
+    /([\w ]+? Invoice)/gi,
+    /([\w ]+? Order)/gi,
   ];
   const doctypes = new Set<string>();
   for (const pattern of patterns) {
-    const matches = text.matchAll(pattern);
-    for (const match of matches) {
-      doctypes.add(match[1].trim());
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match[1]) {
+        doctypes.add(match[1].trim());
+      }
     }
   }
   return Array.from(doctypes);
@@ -110,21 +112,21 @@ export class ContextDemandAnalyzer {
   private async getPythonFiles(startPath: string): Promise<string[]> {
     let results: string[] = [];
     try {
-        const files = await fs.readdir(startPath, { withFileTypes: true });
-
-        for (const file of files) {
-            const fullPath = path.join(startPath, file.name);
-            if (file.isDirectory()) {
-                if (file.name.startsWith('.') || file.name === 'node_modules' || file.name === 'env') {
-                    continue;
-                }
-                results = results.concat(await this.getPythonFiles(fullPath));
-            } else if (file.name.endsWith('.py')) {
-                results.push(path.relative(BENCH_ROOT, fullPath));
-            }
+      const files = await fs.readdir(startPath, { withFileTypes: true });
+      for (const file of files) {
+        const fullPath = path.join(startPath, file.name);
+        if (file.isDirectory()) {
+          if (file.name.startsWith('.') || file.name === 'node_modules' || file.name === 'env') {
+            continue;
+          }
+          const subResults = await this.getPythonFiles(fullPath);
+          results.push(...subResults);
+        } else if (file.name.endsWith('.py')) {
+          results.push(path.relative(BENCH_ROOT, fullPath));
         }
+      }
     } catch (e) {
-        console.error(`Error reading directory ${startPath}: ${e}`);
+      console.error(`Error reading directory ${startPath}: ${e}`);
     }
     return results;
   }

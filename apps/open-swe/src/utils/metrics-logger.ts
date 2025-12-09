@@ -7,7 +7,7 @@
 export interface AgentMetrics {
     issueNumber: number;
     taskTitle: string;
-    status: 'completed' | 'failed';
+    status: 'completed' | 'failed' | 'partial';
     durationSeconds: number;
     tokensUsed: number; // Placeholder for actual LLM token count
     migrationsRun: number;

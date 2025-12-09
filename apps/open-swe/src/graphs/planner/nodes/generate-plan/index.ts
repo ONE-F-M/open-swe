@@ -13,13 +13,13 @@ import {
   PlannerGraphUpdate,
 } from "@openswe/shared/open-swe/planner/types";
 import { formatUserRequestPrompt } from "../../../../utils/user-request.js";
-import {
-  formatFollowupMessagePrompt,
-  isFollowupRequest,
-} from "../../utils/followup.js";
+// import {
+//   formatFollowupMessagePrompt,
+//   isFollowupRequest,
+// } from "../../utils/followup.js";
 import { stopSandbox } from "../../../../utils/sandbox.js";
 import { z } from "zod";
-import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
+import { formatCustomRulesPrompt,getRelevantCustomRules} from "../../../../utils/custom-rules.js";
 import { getScratchpad } from "../../utils/scratchpad-notes.js";
 import {
   SCRATCHPAD_PROMPT,
@@ -28,41 +28,37 @@ import {
 } from "./prompt.js";
 import { shouldUseCustomFramework } from "../../../../utils/should-use-custom-framework.js";
 import { DO_NOT_RENDER_ID_PREFIX } from "@openswe/shared/constants";
-import { filterMessagesWithoutContent } from "../../../../utils/message/content.js";
 import { getModelManager } from "../../../../utils/llms/model-manager.js";
 import { trackCachePerformance } from "../../../../utils/caching.js";
 import { isLocalMode } from "@openswe/shared/open-swe/local-mode";
+
 
 function formatSystemPrompt(
   state: PlannerGraphState,
   config: GraphConfig,
 ): string {
-  const isFollowup = isFollowupRequest(state.taskPlan, state.proposedPlan);
   const scratchpad = getScratchpad(state.messages)
     .map((n) => `- ${n}`)
     .join("\n");
   // Use merged Frappe prompt if frappeMode is enabled
-  let prompt = MERGED_SYSTEM_PROMPT(config);
-  prompt = prompt.replace(
-    "{FOLLOWUP_MESSAGE_PROMPT}",
-    isFollowup
-      ? "\n" +
-          formatFollowupMessagePrompt(state.taskPlan, state.proposedPlan) +
-          "\n\n"
-      : "",
-  )
-    .replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
-    .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
-    .replaceAll(
-      "{SCRATCHPAD}",
-      scratchpad.length
-        ? SCRATCHPAD_PROMPT.replace("{SCRATCHPAD}", scratchpad)
-        : "",
-    )
-    .replace(
-      "{ADDITIONAL_INSTRUCTIONS}",
-      shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
-    );
+  let prompt = MERGED_SYSTEM_PROMPT();
+    // Use only relevant plan rules
+    const filteredRules = getRelevantCustomRules("plan", state.customRules ?? {});
+    const customPlanRules = filteredRules.plan
+      ? formatCustomRulesPrompt(filteredRules.plan)
+      : "";
+    prompt = prompt.replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
+      .replace("{CUSTOM_RULES}", customPlanRules)
+      .replaceAll(
+        "{SCRATCHPAD}",
+        scratchpad.length
+          ? SCRATCHPAD_PROMPT.replace("{SCRATCHPAD}", scratchpad)
+          : "",
+      )
+      .replace(
+        "{ADDITIONAL_INSTRUCTIONS}",
+        shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
+      );
   return prompt;
 }
 
@@ -70,7 +66,15 @@ export async function generatePlan(
   state: PlannerGraphState,
   config: GraphConfig,
 ): Promise<PlannerGraphUpdate> {
-  const model = await loadModel(config, LLMTask.PLANNER);
+  // Module-level model cache
+  let cachedModel: any = null;
+  async function getPlannerModel(config: any) {
+    if (!cachedModel) {
+      cachedModel = await loadModel(config, LLMTask.PLANNER);
+    }
+    return cachedModel;
+  }
+  const model = await getPlannerModel(config);
   const modelManager = getModelManager();
   const modelName = modelManager.getModelNameForTask(config, LLMTask.PLANNER);
   const modelSupportsParallelToolCallsParam = supportsParallelToolCallsParam(
@@ -99,39 +103,55 @@ export async function generatePlan(
     });
   }
 
-  const inputMessages = filterMessagesWithoutContent([
-    ...state.messages,
-    ...(optionalToolMessage ? [optionalToolMessage] : []),
-  ]);
+
+  // Efficient message filtering
+  const inputMessages = [
+    ...state.messages.filter(msg => msg.content),
+    ...(optionalToolMessage ? [optionalToolMessage] : [])
+  ];
   if (!inputMessages.length) {
     throw new Error("No messages to process.");
   }
 
-  const response = await modelWithTools
-    .withConfig({ tags: ["nostream"] })
-    .invoke([
-      {
-        role: "system",
-        content: formatSystemPrompt(state, config),
-      },
-      ...inputMessages,
-    ]);
 
-  // Filter out empty plans
-  response.tool_calls = response.tool_calls?.map((tc) => {
-    if (tc.id === sessionPlanTool.name) {
-      return {
-        ...tc,
-        args: {
-          ...tc.args,
-          plan: (tc.args as z.infer<typeof sessionPlanTool.schema>).plan.filter(
-            (p) => p.length > 0,
-          ),
+  let response;
+  try {
+    response = await modelWithTools
+      .withConfig({ tags: ["nostream"] })
+      .invoke([
+        {
+          role: "system",
+          content: formatSystemPrompt(state, config),
         },
-      };
+        ...inputMessages,
+      ]);
+    // Debug log: inspect full model response
+    console.log("[generatePlan] Model response:", JSON.stringify(response, null, 2));
+    // Patch: Use response.kwargs.tool_calls if present
+    const toolCalls = response.tool_calls ?? response.kwargs?.tool_calls;
+    if (!toolCalls || toolCalls.length === 0) {
+      console.warn("[generatePlan] No tool_calls returned by model.", response);
     }
-    return tc;
-  });
+    // Set response.tool_calls for downstream usage
+    response.tool_calls = toolCalls;
+  } catch (err) {
+    // Granular error handling
+    console.error("[generatePlan] Model invocation failed:", err);
+    throw err;
+  }
+
+  // Filter tool_calls: keep only sessionPlanTool, and filter its plan for non-empty steps
+  if (response.tool_calls) {
+    response.tool_calls = response.tool_calls.filter((tc: any) => {
+      if (tc.name === sessionPlanTool.name || tc.id === sessionPlanTool.name) {
+        if (tc.args && Array.isArray(tc.args.plan)) {
+          tc.args.plan = tc.args.plan.filter((p: any) => p.length > 0);
+        }
+        return true;
+      }
+      return false;
+    });
+  }
 
   const toolCall = response.tool_calls?.[0];
   if (!toolCall) {

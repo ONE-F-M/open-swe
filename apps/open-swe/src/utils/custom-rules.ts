@@ -268,3 +268,140 @@ export function formatCustomRulesPrompt(
         : "",
     );
 }
+
+
+/**
+ * Filters custom rules by keyword for dynamic injection.
+ * @param keyword - The keyword for the rule type (e.g., "plan", "message", "review actions", "pull request")
+ * @param customRules - The full custom rules object
+ * @returns Filtered custom rules object
+ */
+export function getRelevantCustomRules(keyword: string, customRules: any): any {
+  if (!customRules) return {};
+  const result: any = {};
+  if (keyword === "plan" && customRules.plan) {
+    result.plan = customRules.plan;
+  }
+  if (keyword === "message" && customRules.message) {
+    result.message = customRules.message;
+  }
+  if (keyword === "review actions" && customRules.reviewActions) {
+    result.reviewActions = customRules.reviewActions;
+  }
+  if (keyword === "pull request" && customRules.pullRequestFormatting) {
+    result.pullRequestFormatting = customRules.pullRequestFormatting;
+  }
+  return result;
+}
+
+// Helper to extract rule sections from a large prompt
+function extractSection(prompt: string, sectionTitle: string): string {
+  const regex = new RegExp(`## ${sectionTitle}\\n([\\s\\S]*?)(?=\\n##|$)`, 'i');
+  const match = prompt.match(regex);
+  return match ? match[1].trim() : "";
+}
+
+// Main planner prompt containing all rule logic
+export const FRAPPE_PLANNER_PROMPT = `
+## Security
+SQL Injection Prevention: NEVER use string formatting for SQL queries. Use parameterized queries only.\n@frappe.whitelist() MUST check permissions explicitly.\n
+## Naming
+DocType must be Title Case. Field names must be snake_case.\n
+## Doctypes
+To update a DocType, edit the JSON file at one_fm/one_fm/doctype/doctype_name/doctype_name.json and run 'bench migrate'.\n
+## API File Path
+ALWAYS update or add API endpoints in api/api.py. Do not create separate files for each domain.\n
+## Testing
+ALL custom code must use FrappeTestCase for unit tests.\n
+## Caching
+Use frappe.cache for shared data.\n
+## Stock
+Stock updates must use StockEntry and validate quantities.\n
+## Accounting
+All accounting logic must use GL Entry and follow Frappe standards.\n
+`;
+
+// Frappe-specific rules for dynamic context injection
+export const FRAPPE_RULES = [
+  {
+    tag: "SECURITY",
+    keywords: ["sql", "injection", "permission", "whitelist"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Security"),
+  },
+  {
+    tag: "NAMING",
+    keywords: ["doctype", "field", "naming", "snake_case"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Naming"),
+  },
+  {
+    tag: "DOCTYPES",
+    keywords: ["doctype", "fields", "json", "migrate", "schema"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Doctypes"),
+  },
+  {
+    tag: "API_FILE_PATH",
+    keywords: ["api", "endpoint", "whitelist", "api.py"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "API File Path"),
+  },
+  {
+    tag: "TESTING",
+    keywords: ["test", "unittest", "FrappeTestCase", "coverage"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Testing"),
+  },
+  {
+    tag: "CACHING",
+    keywords: ["cache", "frappe.cache", "shared data"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Caching"),
+  },
+  {
+    tag: "STOCK",
+    keywords: ["stock", "StockEntry", "quantity"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Stock"),
+  },
+  {
+    tag: "ACCOUNTING",
+    keywords: ["accounting", "GL Entry", "standards"],
+    content: extractSection(FRAPPE_PLANNER_PROMPT, "Accounting"),
+  },
+];
+
+/**
+ * Combines structured CustomRules and unstructured FRAPPE_RULES for context-aware prompt injection.
+ * Filters by keyword and task description, always includes critical security rules.
+ */
+export function getCombinedRelevantRules(
+  keyword: string,
+  customRules: CustomRules | undefined,
+  taskDescription: string,
+  frappeRules: Array<{ tag: string; keywords: string[]; content: string }>
+): string {
+  let relevantContext = "";
+
+  // Structured rules (CustomRules object)
+  const structured = getRelevantCustomRules(keyword, customRules);
+  if (structured && Object.values(structured).length) {
+    relevantContext += "\n--- [CUSTOM RULES] ---\n";
+    for (const section of Object.values(structured)) {
+      relevantContext += section + "\n";
+    }
+  }
+
+  // Unstructured rules (FRAPPE_RULES array)
+  const lowerCaseTask = taskDescription.toLowerCase();
+  for (const rule of frappeRules) {
+    const isRelevant =
+      rule.keywords.some(keyword => lowerCaseTask.includes(keyword)) ||
+      (rule.tag === "DOCTYPES" && lowerCaseTask.includes("doctype"));
+    if (isRelevant) {
+      relevantContext += `\n--- [CONTEXT: ${rule.tag}] ---\n${rule.content}`;
+    }
+  }
+
+  // Always include critical security rules
+  const essentialSecurity = frappeRules.find(r => r.tag === "SECURITY")?.content || "";
+  if (!relevantContext.includes(essentialSecurity)) {
+    relevantContext = `\n--- [CRITICAL SECURITY OVERRIDE] ---\n${essentialSecurity}\n${relevantContext}`;
+  }
+
+  return relevantContext.trim();
+}

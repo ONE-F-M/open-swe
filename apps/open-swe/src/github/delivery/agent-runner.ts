@@ -1,6 +1,6 @@
 import { FrappeGitHubAdapter } from "../frappe-github-adapter.js";
 import { FrappeRepoConfig } from "../config/frappe-repos.js";
-import { runAgent } from "../../agents/manager/manager-runner.js";
+import { runAgentWithCheckpointing } from "../../agents/manager/manager-runner.js";
 import type { AgentExecutionResult as AgentRunResult } from "../../agents/manager/manager-runner.js";
 
 export class AgentDeliveryOrchestrator {
@@ -38,7 +38,7 @@ export class AgentDeliveryOrchestrator {
         if (task.targetBranch) {
 }
 
-        const agentResult: AgentRunResult = await runAgent({
+        const agentResult: AgentRunResult = await runAgentWithCheckpointing({
             issueNumber: task.issueNumber,
             taskTitle: task.taskTitle,
             taskDescription: task.taskDescription,

@@ -42,7 +42,7 @@ import { getMissingMessages } from "../../../../utils/github/issue-messages.js";
 import { getPlansFromIssue } from "../../../../utils/github/issue-task.js";
 import { createGrepTool } from "../../../../tools/grep.js";
 import { createInstallDependenciesTool } from "../../../../tools/install-dependencies.js";
-import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
+import { formatCustomRulesPrompt, getRelevantCustomRules } from "../../../../utils/custom-rules.js";
 import { getMcpTools } from "../../../../utils/mcp-client.js";
 import {
   formatCodeReviewPrompt,
@@ -116,7 +116,16 @@ const formatStaticInstructionsPrompt = (
       : STATIC_SYSTEM_INSTRUCTIONS
   )
     .replaceAll("{REPO_DIRECTORY}", getRepoAbsolutePath(state.targetRepository))
-    .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
+    // .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
+    .replaceAll(
+      "{CUSTOM_RULES}",
+      formatCustomRulesPrompt(
+        getRelevantCustomRules(
+          getCurrentPlanItem(getActivePlanItems(state.taskPlan))?.plan ?? "",
+          state.customRules
+        )
+      )
+    )
     .replace(
       "{CUSTOM_FRAMEWORK_PROMPT}",
       shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",

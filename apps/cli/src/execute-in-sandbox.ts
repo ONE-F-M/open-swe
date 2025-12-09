@@ -28,10 +28,8 @@ export async function executeInSandbox(
       containerName,
       'bash', '-c', command
     ];
-    console.log(`[executeInSandbox] Running: docker ${dockerArgs.join(' ')}`);
     try {
       const result = await execa('docker', dockerArgs);
-      console.log(`[executeInSandbox] Success:`, result);
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -39,11 +37,6 @@ export async function executeInSandbox(
       };
     } catch (error) {
       const execaResult = error as any;
-      console.error(`[executeInSandbox] Command failed: docker ${dockerArgs.join(' ')}`, {
-        stdout: execaResult.stdout,
-        stderr: execaResult.stderr,
-        exitCode: execaResult.exitCode,
-      });
       return {
         stdout: execaResult.stdout || "",
         stderr: execaResult.stderr || execaResult.message,
@@ -52,10 +45,8 @@ export async function executeInSandbox(
     }
   } else {
     // Direct execution in Daytona VM/snapshot
-    console.log(`[executeInSandbox] Running directly in sandbox: ${command} (cwd: ${workDir})`);
     try {
       const result = await execa('bash', ['-c', command], { cwd: workDir });
-      console.log(`[executeInSandbox] Success:`, result);
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -63,11 +54,6 @@ export async function executeInSandbox(
       };
     } catch (error) {
       const execaResult = error as any;
-      console.error(`[executeInSandbox] Command failed (direct): ${command}`, {
-        stdout: execaResult.stdout,
-        stderr: execaResult.stderr,
-        exitCode: execaResult.exitCode,
-      });
       return {
         stdout: execaResult.stdout || "",
         stderr: execaResult.stderr || execaResult.message,

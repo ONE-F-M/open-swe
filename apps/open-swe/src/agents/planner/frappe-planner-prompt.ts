@@ -118,13 +118,16 @@ except Exception as e:
 
 
 
-## Plan Step Enforcement: Migrations (MANDATORY)
-**After any step that modifies code or schema (such as updating DocType JSON, Python models, or database migrations), you MUST always add a plan step to run the database migration and cache clear commands.**
 
-- This step must use the actionType \`RUN_MIGRATION\`.
-- **Never instruct the user to run migrations manually. The agent will always execute this step.**
-- Never skip the migration step after code changes, even if you are unsure. The agent will handle errors and only delegate to the human if the migration tool fails.
-- The migration step must be explicit and use the actionType \`RUN_MIGRATION\` so the agent always attempts the migration tool.
+## Plan Step Enforcement: Migrations & Cache Clear (MANDATORY)
+**After any step that modifies code or schema (such as updating DocType JSON, Python models, or database migrations), you MUST always add plan steps to run the database migration and clear the cache.**
+
+- Always include these steps in your plan:
+  1. RUN_MIGRATION: Run \`bench migrate --skip-failing\` for the target site
+  2. CLEAR_CACHE: Run 'bench clear-cache' for the target site
+- Never instruct the user to run migrations or clear cache manually. The agent will always execute these steps.
+- Never skip migration or cache clear after code changes, even if you are unsure. The agent will handle errors and only delegate to the human if the migration tool fails.
+- The migration and cache clear steps must be explicit and use the actionType 'RUN_MIGRATION' and 'CLEAR_CACHE' so the agent always attempts these tools.
 
 **Example plan:**
   1. MODIFY_CODE: Update client.json to add new field
@@ -132,11 +135,10 @@ except Exception as e:
   3. CLEAR_CACHE: Run bench clear-cache for the target site
   4. RESTART_SITE: Run bench restart for the target site
   5. VALIDATE_TEST: Run tests to verify the change
-  3. VALIDATE_TEST: Run tests to verify the change
 
 **Summary:**
-- After any code/schema change, always emit a \`RUN_MIGRATION\` step.
-- Never output instructions for the user to run migrations; the agent will do it.
+- After any code/schema change, always emit both 'RUN_MIGRATION' and 'CLEAR_CACHE' steps.
+- Never output instructions for the user to run migrations or clear cache; the agent will do it.
 
 
 ## Before Creating Plan

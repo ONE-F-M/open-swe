@@ -1,12 +1,8 @@
 import { GITHUB_WORKFLOWS_PERMISSIONS_PROMPT } from "../../../shared/prompts.js";
 import { FRAPPE_PLANNER_PROMPT } from "../../../../agents/planner/frappe-planner-prompt.js";
-// Merged system prompt for Frappe mode
-export function MERGED_SYSTEM_PROMPT(config: any) {
-   let prompt = SYSTEM_PROMPT;
-   if (config?.configurable?.frappeMode) {
-     prompt = prompt.replace('{CUSTOM_RULES}', FRAPPE_PLANNER_PROMPT);
-   }
-   return prompt;
+// system prompt for Frappe mode
+export function MERGED_SYSTEM_PROMPT() {
+   return SYSTEM_PROMPT.replace('{CUSTOM_RULES}', FRAPPE_PLANNER_PROMPT);
 }
 
 export const SCRATCHPAD_PROMPT = `Here is a collection of technical notes you wrote to a scratchpad while gathering context for the plan. Ensure you take these into account when writing your plan.

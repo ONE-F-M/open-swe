@@ -16,26 +16,36 @@ export interface APISearchResult {
 export class FrappeAPISearch {
   private vectorStore!: MemoryVectorStore;
   private apiIndex!: FrappeAPIIndex;
-  
+  private moduleContentCache = new Map<string, string>();
+
   // Returns the code/content for a given module path from the API index (for context loading)
   async getModuleContent(modulePath: string): Promise<string> {
+    if (this.moduleContentCache.has(modulePath)) {
+      return this.moduleContentCache.get(modulePath)!;
+    }
     const module = this.apiIndex?.modules?.[modulePath];
     if (!module) return "";
-    let content = "";
-
+    let contentArray: string[] = [];
     // Concatenate all function signatures and docstrings in the module
     if (Array.isArray(module.functions)) {
       for (const func of module.functions) {
-        content += `${func.signature}\n${func.docstring || ""}\n`;
+        contentArray.push(`${func.signature}\n${func.docstring || ""}\n`);
       }
     }
     // Concatenate all class definitions in the module
     if (Array.isArray(module.classes)) {
       for (const cls of module.classes) {
-        content += `class ${cls.name} {\n${cls.docstring || ""}\n}`;
+        contentArray.push(`class ${cls.name} {\n${cls.docstring || ""}\n}`);
       }
     }
+    const content = contentArray.join("");
+    this.moduleContentCache.set(modulePath, content);
     return content;
+  }
+
+  // Batch search stub for future optimization
+  async batchSearchModuleContents(modulePaths: string[]): Promise<string[]> {
+    return Promise.all(modulePaths.map((p) => this.getModuleContent(p)));
   }
 
   // Loads the API index and builds the vector store for semantic search

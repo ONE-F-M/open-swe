@@ -24,7 +24,7 @@ import {
   createShellTool,
   createInstallDependenciesTool,
 } from "../../../../tools/index.js";
-import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
+import { formatCustomRulesPrompt, getRelevantCustomRules } from "../../../../utils/custom-rules.js";
 import { formatUserRequestPrompt } from "../../../../utils/user-request.js";
 import { getActivePlanItems } from "@openswe/shared/open-swe/tasks";
 import { formatPlanPromptWithSummaries } from "../../../../utils/plan-prompt.js";
@@ -52,6 +52,11 @@ function formatSystemPrompt(
   const activePlan = getActivePlanItems(state.taskPlan);
   const tasksString = formatPlanPromptWithSummaries(activePlan);
 
+  // Use only relevant review actions rules
+  const filteredRules = getRelevantCustomRules("review actions", state.customRules ?? {});
+  const customReviewActionsRules = filteredRules.reviewActions
+    ? formatCustomRulesPrompt(filteredRules.reviewActions)
+    : "";
   return SYSTEM_PROMPT.replaceAll(
     "{CODEBASE_TREE}",
     state.codebaseTree || "No codebase tree generated yet.",
@@ -60,7 +65,7 @@ function formatSystemPrompt(
       "{CURRENT_WORKING_DIRECTORY}",
       getRepoAbsolutePath(state.targetRepository),
     )
-    .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
+    .replaceAll("{CUSTOM_RULES}", customReviewActionsRules)
     .replaceAll("{CHANGED_FILES}", state.changedFiles)
     .replaceAll("{BASE_BRANCH_NAME}", state.baseBranchName)
     .replace(

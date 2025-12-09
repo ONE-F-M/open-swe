@@ -2,6 +2,11 @@ import { LazyContextLoader } from "../../context/lazy-loader.js";
 import { MigrationHandler } from "../../migration/migration-handler.js";
 import { benchClearCacheTool, benchRunTestTool } from '../../../../cli/src/tools.js';
 import { Sandbox } from "@daytonaio/sdk";
+import { createLogger, LogLevel } from "../../utils/logger.js";
+import { readFile, writeFile } from "../../utils/read-write.js";
+// import { formatCustomRulesPrompt, getRelevantCustomRules } from "../../utils/custom-rules.js";
+// import { getCurrentPlanItem } from "../../utils/current-task.js";
+// import { getActivePlanItems } from "@openswe/shared/open-swe/tasks";
 // import { FRAPPE_PROGRAMMER_INSTRUCTIONS } from "./frappe-programmer-prompt.js";
 
 // PlanStep describes a single actionable instruction for the programmer agent
@@ -23,11 +28,20 @@ export class FrappeProgrammerAgent {
   private static readonly MAX_TEST_RETRIES = 3;
   private sandbox: Sandbox;
   private siteName: string;
+  private logger = createLogger(LogLevel.INFO, "FrappeProgrammerAgent");
+  public targetRepository: { owner: string; repo: string; branch: string };
+  // public taskPlan: any;
+  // public customRules: any;
 
   constructor(sandbox: Sandbox, siteName: string) {
     this.sandbox = sandbox;
     this.siteName = siteName;
     this.migrationHandler = new MigrationHandler(this.sandbox, this.siteName);
+    this.targetRepository = {
+      owner: process.env.REPO_OWNER || "ONE-F-M",
+      repo: process.env.REPO_NAME || "one_fm",
+      branch: process.env.REPO_BRANCH || "version-15"
+    };
   }
 
   // Executes a plan step: modifies code, runs migrations, and/or tests as required.
@@ -35,20 +49,32 @@ export class FrappeProgrammerAgent {
     step: PlanStep,
     currentContext: string
   ): Promise<{ filesModified: string[]; migrationLog: string; testResults: { exitCode: number; output?: string } }> {
-    // Combine the programmer instructions prompt with the current context and step instruction
-    // const fullPrompt = `${FRAPPE_PROGRAMMER_INSTRUCTIONS}\n\nCurrent context: ${currentContext}\n\nInstruction: ${step.instruction}`;
-    // Use fullPrompt in your LLM or code generation logic as needed
+    // Build the programmer instructions prompt with custom rules injected
+    // const originalPrompt = `${FRAPPE_PROGRAMMER_INSTRUCTIONS}\n\nCurrent context: ${currentContext}\n\nInstruction: ${step.instruction}\n\n{CUSTOM_RULES}`;
+    // const customRulesStr = formatCustomRulesPrompt(
+    //   getRelevantCustomRules(
+    //     getCurrentPlanItem(getActivePlanItems(this.taskPlan))?.plan ?? "",
+    //     this.customRules
+    //   )
+    // );
+    // const promptWithCustomRules = originalPrompt.replaceAll("{CUSTOM_RULES}", customRulesStr);
+    // Use promptWithCustomRules for logging, display, or passing to other functions
+    // this.logger.info(promptWithCustomRules);
+
     // Summarize file changes and load additional context for new imports
     const codeToWrite = this.summarizeFileChanges(step);
     const newImports = this.extractImports(codeToWrite);
+    // Conditional context loading: only load if not already present
     for (const importStmt of newImports) {
-      const additionalContext = await this.contextLoader.loadOnDemand(
-        importStmt,
-        this.getCurrentTokenCount(currentContext),
-        180000
-      );
-      if (additionalContext) {
-        currentContext += `\n\n${additionalContext}`;
+      if (!currentContext.includes(importStmt)) {
+        const additionalContext = await this.contextLoader.loadOnDemand(
+          importStmt,
+          this.getCurrentTokenCount(currentContext),
+          180000
+        );
+        if (additionalContext) {
+          currentContext += `\n\n${additionalContext}`;
+        }
       }
     }
 
@@ -115,10 +141,50 @@ export class FrappeProgrammerAgent {
   private async writeFilesFromStep(step: PlanStep): Promise<string[]> {
     if (!step.fileChanges) return [];
     const written: string[] = [];
-    for (const filePath of Object.keys(step.fileChanges)) {
+    for (const [filePath, content] of Object.entries(step.fileChanges)) {
+      // Check if the file content is different before writing
+      const existingContent = await this.getFileContent(filePath);
+      if (existingContent !== content) {
+        await this.writeFile(filePath, content);
         written.push(filePath);
+      }
     }
     return written;
+  }
+
+  // Reads file content using utility
+  private async getFileContent(filePath: string): Promise<string> {
+    try {
+      const result = await readFile({
+        sandbox: this.sandbox,
+        filePath,
+        config: {},
+      });
+      return result.success ? result.output : "";
+    } catch (err) {
+      // Only log errors for failures
+      this.logger.error(`Error reading file ${filePath}: ${err}`);
+      return "";
+    }
+  }
+
+  // Writes file content using utility
+  private async writeFile(filePath: string, content: string): Promise<void> {
+    try {
+      const result = await writeFile({
+        sandbox: this.sandbox,
+        filePath,
+        content,
+        config: undefined,
+      });
+      if (!result.success) {
+        // Only log errors for failures
+        this.logger.error(`Error writing file ${filePath}: ${result.output}`);
+      }
+    } catch (err) {
+      // Only log errors for failures
+      this.logger.error(`Exception writing file ${filePath}: ${err}`);
+    }
   }
 
   // Runs tests for the app, with retries and cache clearing
@@ -142,6 +208,8 @@ export class FrappeProgrammerAgent {
       if ("passed" in testResult && testResult.passed) {
         return;
       } else {
+        // Only log errors for failures
+        this.logger.error(`Test failed for ${appName} module ${module}. Output: ${testOutput}, Errors: ${testError}`);
         lastError = `Tests failed.\nSTDOUT:\n${testOutput}\nSTDERR:\n${testStderr}\nERROR:\n${testError || ""}`;
         attempts++;
       }
