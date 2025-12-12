@@ -1,8 +1,5 @@
-import {
-  getModelManager,
-  loadModel,
-  supportsParallelToolCallsParam,
-} from "../../../../utils/llms/index.js";
+import { handleAIToolCall } from "../handle-ai-tool-call.js";
+import {getModelManager,loadModel,supportsParallelToolCallsParam,} from "../../../../utils/llms/index.js";
 import { LLMTask } from "@openswe/shared/open-swe/llm-task";
 import {
   createGetURLContentTool,
@@ -21,7 +18,7 @@ import {
   isFollowupRequest,
 } from "../../utils/followup.js";
 import {
-  SYSTEM_PROMPT,
+  MERGED_SYSTEM_PROMPT,
   EXTERNAL_FRAMEWORK_DOCUMENTATION_PROMPT,
   EXTERNAL_FRAMEWORK_PLAN_PROMPT,
 } from "./prompt.js";
@@ -33,7 +30,7 @@ import {
 import { getMissingMessages } from "../../../../utils/github/issue-messages.js";
 import { getPlansFromIssue } from "../../../../utils/github/issue-task.js";
 import { createGrepTool } from "../../../../tools/grep.js";
-import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
+import { getCombinedRelevantRules, FRAPPE_RULES } from "../../../../utils/custom-rules.js";
 import { createScratchpadTool } from "../../../../tools/scratchpad.js";
 import { getMcpTools } from "../../../../utils/mcp-client.js";
 import { filterMessagesWithoutContent } from "../../../../utils/message/content.js";
@@ -58,16 +55,49 @@ function formatSystemPrompt(
   const scratchpad = getScratchpad(state.messages)
     .map((n) => `- ${n}`)
     .join("\n");
-  return SYSTEM_PROMPT.replace(
-    "{FOLLOWUP_MESSAGE_PROMPT}",
-    isFollowup
-      ? formatFollowupMessagePrompt(
-          state.taskPlan,
-          state.proposedPlan,
-          scratchpad,
-        )
-      : "",
-  )
+  // frappeMode env logic should be handled in config setup, not here
+  const prompt = MERGED_SYSTEM_PROMPT();
+  logger.info(
+    "Using planner prompt:",
+    prompt.includes("Frappe/ERPNext application. Critical context:") ? "Frappe" : "Default"
+  );
+  const keyword = "plan";
+  const customRules = state.customRules ?? {};
+  // Get current plan item description if available
+  let taskDescription = "";
+  if (
+    state.taskPlan &&
+    Array.isArray(state.taskPlan.tasks) &&
+    typeof state.taskPlan.activeTaskIndex === "number" &&
+    state.taskPlan.tasks.length > state.taskPlan.activeTaskIndex
+  ) {
+    const activeTask = state.taskPlan.tasks[state.taskPlan.activeTaskIndex];
+    if (
+      activeTask &&
+      Array.isArray(activeTask.planRevisions) &&
+      typeof activeTask.activeRevisionIndex === "number" &&
+      activeTask.planRevisions.length > activeTask.activeRevisionIndex
+    ) {
+      const activeRevision = activeTask.planRevisions[activeTask.activeRevisionIndex];
+      if (activeRevision && Array.isArray(activeRevision.plans) && activeRevision.plans.length > 0) {
+        // Use the first plan item for context
+        taskDescription = activeRevision.plans[0].plan || "";
+      }
+    }
+  }
+  const filteredRules = getCombinedRelevantRules(keyword, customRules, taskDescription, FRAPPE_RULES);
+  const customMessageRules = filteredRules || "";
+  return prompt
+    .replace(
+      "{FOLLOWUP_MESSAGE_PROMPT}",
+      isFollowup
+        ? formatFollowupMessagePrompt(
+            state.taskPlan,
+            state.proposedPlan,
+            scratchpad,
+          )
+        : "",
+    )
     .replaceAll(
       "{CURRENT_WORKING_DIRECTORY}",
       isLocalMode(config)
@@ -84,7 +114,7 @@ function formatSystemPrompt(
       "{CODEBASE_TREE}",
       state.codebaseTree || "No codebase tree generated yet.",
     )
-    .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
+    .replaceAll("{CUSTOM_RULES}", customMessageRules)
     .replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
     .replace(
       "{EXTERNAL_FRAMEWORK_DOCUMENTATION_PROMPT}",
@@ -158,29 +188,46 @@ export async function generateAction(
     throw new Error("No messages to process.");
   }
 
-  const inputMessagesWithCache =
-    convertMessagesToCacheControlledMessages(inputMessages);
-  const response = await modelWithTools
-    .withConfig({ tags: ["nostream"] })
-    .invoke([
-      {
-        role: "system",
-        content: formatSystemPrompt(
-          {
-            ...state,
-            taskPlan: latestTaskPlan ?? state.taskPlan,
-          },
-          config,
-        ),
-      },
-      ...inputMessagesWithCache,
-    ]);
+  let inputMessagesWithCache = convertMessagesToCacheControlledMessages(inputMessages);
+
+  // Compose the initial message list (system + user/history)
+  const initialMessages = [
+    {
+      role: "system",
+      content: formatSystemPrompt(
+        {
+          ...state,
+          taskPlan: latestTaskPlan ?? state.taskPlan,
+        },
+        config,
+      ),
+    },
+    ...inputMessagesWithCache,
+  ];
+
+  // Tool execution function
+  async function executeToolFn(name: string, args: any) {
+    // Find the tool by name
+    const tool = tools.find((t) => t.name === name);
+    if (!tool) throw new Error(`Tool not found: ${name}`);
+    // @ts-expect-error tool.invoke types
+    return await tool.invoke(args);
+  }
+
+  // Model call function
+  async function callModel(msgs: any[]) {
+    // Remove any extra fields not expected by the LLM (if needed)
+    return await modelWithTools.withConfig({ tags: ["nostream"] }).invoke(msgs);
+  }
+
+  // Use the handler to enforce protocol and loop
+  const response = await handleAIToolCall(initialMessages, executeToolFn, callModel);
 
   logger.info("Generated planning message", {
     ...(getMessageContentString(response.content) && {
       content: getMessageContentString(response.content),
     }),
-    ...response.tool_calls?.map((tc) => ({
+    ...response.tool_calls?.map((tc: any) => ({
       name: tc.name,
       args: tc.args,
     })),

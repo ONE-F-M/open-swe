@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
  */
 export async function GET(request: NextRequest) {
   try {
+    const allCookies = request.cookies.getAll().map(c => ({ name: c.name, value: c.value }));
     const { searchParams } = new URL(request.url);
     const installationId = searchParams.get("installation_id");
 
@@ -34,6 +35,7 @@ export async function GET(request: NextRequest) {
 
     // Create the response that will redirect back to the app
     const response = NextResponse.redirect(returnTo);
+    // const response = NextResponse.redirect("https://automatically-geographical-lucio.ngrok-free.dev/");
 
     // Clear cookies as they're no longer needed
     const expiredCookieOptions = {
@@ -59,6 +61,40 @@ export async function GET(request: NextRequest) {
         installationId,
         getInstallationCookieOptions(),
       );
+      } else {
+      // Try to fetch user's installations using the user token from cookie
+      const userToken = request.cookies.get("github_token")?.value;
+      if (userToken) {
+        try {
+          const userInstallationsRes = await fetch("https://api.github.com/user/installations", {
+            headers: {
+              Authorization: `Bearer ${userToken}`,
+              Accept: "application/vnd.github+json",
+              "User-Agent": "OpenSWE-Agent"
+            }
+          });
+          if (userInstallationsRes.ok) {
+            const userInstallations = await userInstallationsRes.json();
+            const firstInstallation = userInstallations.installations?.[0];
+            if (firstInstallation?.id) {
+              console.log("[installation-callback] Setting GITHUB_INSTALLATION_ID_COOKIE from user installations:", firstInstallation.id);
+              response.cookies.set(
+                GITHUB_INSTALLATION_ID_COOKIE,
+                String(firstInstallation.id),
+                getInstallationCookieOptions(),
+              );
+            } else {
+              console.warn("[installation-callback] No installations found for user");
+            }
+          } else {
+            console.warn("[installation-callback] Failed to fetch user installations", await userInstallationsRes.text());
+          }
+        } catch (err) {
+          console.error("[installation-callback] Error fetching user installations:", err);
+        }
+      } else {
+        console.warn("[installation-callback] No github_token cookie found, cannot fetch installations");
+      }
     }
 
     return response;

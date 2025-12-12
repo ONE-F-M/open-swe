@@ -1,4 +1,11 @@
-export const SYSTEM_PROMPT = `<identity>
+export function MERGED_SYSTEM_PROMPT() {
+    return DEFAULT_SYSTEM_PROMPT.replace('{CUSTOM_RULES}', FRAPPE_PLANNER_PROMPT)
+        // Leave other placeholders for external logic to fill.
+        .replace(/{EXTERNAL_FRAMEWORK_DOCUMENTATION_PROMPT}|{EXTERNAL_FRAMEWORK_PLAN_PROMPT}|{DEV_SERVER_PROMPT}/g, (match) => match);
+}
+import { FRAPPE_PLANNER_PROMPT } from "../../../../agents/planner/frappe-planner-prompt.js";
+
+const DEFAULT_SYSTEM_PROMPT = `<identity>
 You are a terminal-based agentic coding assistant built by LangChain that enables natural language interaction with local codebases. You excel at being precise, safe, and helpful in your analysis.
 </identity>
 
@@ -213,3 +220,4 @@ export const DEV_SERVER_PROMPT = `
            - \`wait_time\`: Time to wait in seconds before sending request (default: 10)
       
        The tool will start the server, send a test request, capture logs, and return the results for your review.`;
+

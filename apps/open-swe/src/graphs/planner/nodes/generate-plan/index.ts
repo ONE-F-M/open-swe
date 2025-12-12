@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { benchListAppsTool } from "@openswe/cli/src/tools.js";
 import { isAIMessage, ToolMessage } from "@langchain/core/messages";
 import { createSessionPlanToolFields } from "../../../../tools/index.js";
 import { GraphConfig } from "@openswe/shared/open-swe/types";
@@ -12,62 +13,68 @@ import {
   PlannerGraphUpdate,
 } from "@openswe/shared/open-swe/planner/types";
 import { formatUserRequestPrompt } from "../../../../utils/user-request.js";
-import {
-  formatFollowupMessagePrompt,
-  isFollowupRequest,
-} from "../../utils/followup.js";
+// import {
+//   formatFollowupMessagePrompt,
+//   isFollowupRequest,
+// } from "../../utils/followup.js";
 import { stopSandbox } from "../../../../utils/sandbox.js";
 import { z } from "zod";
-import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
+import { formatCustomRulesPrompt,getRelevantCustomRules} from "../../../../utils/custom-rules.js";
 import { getScratchpad } from "../../utils/scratchpad-notes.js";
 import {
   SCRATCHPAD_PROMPT,
-  SYSTEM_PROMPT,
   CUSTOM_FRAMEWORK_PROMPT,
+  MERGED_SYSTEM_PROMPT,
 } from "./prompt.js";
 import { shouldUseCustomFramework } from "../../../../utils/should-use-custom-framework.js";
 import { DO_NOT_RENDER_ID_PREFIX } from "@openswe/shared/constants";
-import { filterMessagesWithoutContent } from "../../../../utils/message/content.js";
 import { getModelManager } from "../../../../utils/llms/model-manager.js";
 import { trackCachePerformance } from "../../../../utils/caching.js";
 import { isLocalMode } from "@openswe/shared/open-swe/local-mode";
+
 
 function formatSystemPrompt(
   state: PlannerGraphState,
   config: GraphConfig,
 ): string {
-  // It's a followup if there's more than one human message.
-  const isFollowup = isFollowupRequest(state.taskPlan, state.proposedPlan);
   const scratchpad = getScratchpad(state.messages)
     .map((n) => `- ${n}`)
     .join("\n");
-  return SYSTEM_PROMPT.replace(
-    "{FOLLOWUP_MESSAGE_PROMPT}",
-    isFollowup
-      ? "\n" +
-          formatFollowupMessagePrompt(state.taskPlan, state.proposedPlan) +
-          "\n\n"
-      : "",
-  )
-    .replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
-    .replaceAll("{CUSTOM_RULES}", formatCustomRulesPrompt(state.customRules))
-    .replaceAll(
-      "{SCRATCHPAD}",
-      scratchpad.length
-        ? SCRATCHPAD_PROMPT.replace("{SCRATCHPAD}", scratchpad)
-        : "",
-    )
-    .replace(
-      "{ADDITIONAL_INSTRUCTIONS}",
-      shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
-    );
+  // Use merged Frappe prompt if frappeMode is enabled
+  let prompt = MERGED_SYSTEM_PROMPT();
+    // Use only relevant plan rules
+    const filteredRules = getRelevantCustomRules("plan", state.customRules ?? {});
+    const customPlanRules = filteredRules.plan
+      ? formatCustomRulesPrompt(filteredRules.plan)
+      : "";
+    prompt = prompt.replace("{USER_REQUEST_PROMPT}", formatUserRequestPrompt(state.messages))
+      .replace("{CUSTOM_RULES}", customPlanRules)
+      .replaceAll(
+        "{SCRATCHPAD}",
+        scratchpad.length
+          ? SCRATCHPAD_PROMPT.replace("{SCRATCHPAD}", scratchpad)
+          : "",
+      )
+      .replace(
+        "{ADDITIONAL_INSTRUCTIONS}",
+        shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
+      );
+  return prompt;
 }
 
 export async function generatePlan(
   state: PlannerGraphState,
   config: GraphConfig,
 ): Promise<PlannerGraphUpdate> {
-  const model = await loadModel(config, LLMTask.PLANNER);
+  // Module-level model cache
+  let cachedModel: any = null;
+  async function getPlannerModel(config: any) {
+    if (!cachedModel) {
+      cachedModel = await loadModel(config, LLMTask.PLANNER);
+    }
+    return cachedModel;
+  }
+  const model = await getPlannerModel(config);
   const modelManager = getModelManager();
   const modelName = modelManager.getModelNameForTask(config, LLMTask.PLANNER);
   const modelSupportsParallelToolCallsParam = supportsParallelToolCallsParam(
@@ -96,39 +103,55 @@ export async function generatePlan(
     });
   }
 
-  const inputMessages = filterMessagesWithoutContent([
-    ...state.messages,
-    ...(optionalToolMessage ? [optionalToolMessage] : []),
-  ]);
+
+  // Efficient message filtering
+  const inputMessages = [
+    ...state.messages.filter(msg => msg.content),
+    ...(optionalToolMessage ? [optionalToolMessage] : [])
+  ];
   if (!inputMessages.length) {
     throw new Error("No messages to process.");
   }
 
-  const response = await modelWithTools
-    .withConfig({ tags: ["nostream"] })
-    .invoke([
-      {
-        role: "system",
-        content: formatSystemPrompt(state, config),
-      },
-      ...inputMessages,
-    ]);
 
-  // Filter out empty plans
-  response.tool_calls = response.tool_calls?.map((tc) => {
-    if (tc.id === sessionPlanTool.name) {
-      return {
-        ...tc,
-        args: {
-          ...tc.args,
-          plan: (tc.args as z.infer<typeof sessionPlanTool.schema>).plan.filter(
-            (p) => p.length > 0,
-          ),
+  let response;
+  try {
+    response = await modelWithTools
+      .withConfig({ tags: ["nostream"] })
+      .invoke([
+        {
+          role: "system",
+          content: formatSystemPrompt(state, config),
         },
-      };
+        ...inputMessages,
+      ]);
+    // Debug log: inspect full model response
+    console.log("[generatePlan] Model response:", JSON.stringify(response, null, 2));
+    // Patch: Use response.kwargs.tool_calls if present
+    const toolCalls = response.tool_calls ?? response.kwargs?.tool_calls;
+    if (!toolCalls || toolCalls.length === 0) {
+      console.warn("[generatePlan] No tool_calls returned by model.", response);
     }
-    return tc;
-  });
+    // Set response.tool_calls for downstream usage
+    response.tool_calls = toolCalls;
+  } catch (err) {
+    // Granular error handling
+    console.error("[generatePlan] Model invocation failed:", err);
+    throw err;
+  }
+
+  // Filter tool_calls: keep only sessionPlanTool, and filter its plan for non-empty steps
+  if (response.tool_calls) {
+    response.tool_calls = response.tool_calls.filter((tc: any) => {
+      if (tc.name === sessionPlanTool.name || tc.id === sessionPlanTool.name) {
+        if (tc.args && Array.isArray(tc.args.plan)) {
+          tc.args.plan = tc.args.plan.filter((p: any) => p.length > 0);
+        }
+        return true;
+      }
+      return false;
+    });
+  }
 
   const toolCall = response.tool_calls?.[0];
   if (!toolCall) {
@@ -145,6 +168,7 @@ export async function generatePlan(
     typeof sessionPlanTool.schema
   >;
 
+  // --- Frappe/ERPNext core file restriction enforcement ---
   const toolResponse = new ToolMessage({
     id: `${DO_NOT_RENDER_ID_PREFIX}${uuidv4()}`,
     tool_call_id: toolCall.id ?? "",
@@ -152,10 +176,62 @@ export async function generatePlan(
     name: sessionPlanTool.name,
   });
 
+  const forbidden = proposedPlanArgs.plan.some(
+    (item) => /frappe\//i.test(item) || /erpnext\//i.test(item)
+  );
+  if (forbidden) {
+    return {
+      messages: [response, toolResponse],
+      proposedPlanTitle: "Invalid Plan",
+      proposedPlan: [
+        "This request cannot be completed because it requires modifying core files, which is not allowed. Please request a customization in one_fm only."
+      ],
+      ...(newSessionId && { sandboxSessionId: newSessionId }),
+      tokenData: trackCachePerformance(response, modelName),
+    };
+  }
+  // --- End restriction enforcement ---
+
+  // Inject RUN_MIGRATION step if needed
+  let plan = [...proposedPlanArgs.plan];
+  const hasModifyCode = plan.some((item) => /MODIFY_CODE/i.test(item));
+  const hasMigration = plan.some((item) => /RUN_MIGRATION/i.test(item));
+  if (hasModifyCode && !hasMigration) {
+    // Find the last MODIFY_CODE step
+    let lastModifyIdx = -1;
+    for (let i = 0; i < plan.length; i++) {
+      if (/MODIFY_CODE/i.test(plan[i])) lastModifyIdx = i;
+    }
+    // Insert RUN_MIGRATION, CLEAR_CACHE, and RESTART_SITE after last MODIFY_CODE
+    if (lastModifyIdx !== -1) {
+      plan.splice(
+        lastModifyIdx + 1,
+        0,
+        'RUN_MIGRATION: Run bench migrate --skip-failing for the target site',
+        'CLEAR_CACHE: Run bench clear-cache for the target site',
+        'RESTART_SITE: Run bench restart for the target site'
+      );
+    }
+  }
+
+  // Get the app name for the current site (fallback to one_fm if not found)
+  let appName = "one_fm";
+  try {
+    const site = (config as any).site || process.env.SITE_NAME || "onefm";
+    const { apps } = await benchListAppsTool.invoke({ site });
+    appName = (apps as string[]).find((a: string) => !["frappe", "erpnext"].includes(a)) || appName;
+  } catch (e) {
+    // fallback to default
+  }
+
+  const planWithAppName = plan.map((item: string) =>
+    item.replace(/\[app_name\]/g, appName)
+  );
+
   return {
     messages: [response, toolResponse],
     proposedPlanTitle: proposedPlanArgs.title,
-    proposedPlan: proposedPlanArgs.plan,
+    proposedPlan: planWithAppName,
     ...(newSessionId && { sandboxSessionId: newSessionId }),
     tokenData: trackCachePerformance(response, modelName),
   };

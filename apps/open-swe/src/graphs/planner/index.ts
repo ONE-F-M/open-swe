@@ -1,9 +1,10 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
+import { MemorySaver } from "@langchain/langgraph";
 import {
   PlannerGraphState,
   PlannerGraphStateObj,
 } from "@openswe/shared/open-swe/planner/types";
-import { GraphConfiguration } from "@openswe/shared/open-swe/types";
+import { GraphConfiguration, GraphConfig } from "@openswe/shared/open-swe/types";
 import {
   generateAction,
   generatePlan,
@@ -30,8 +31,26 @@ function takeActionOrGeneratePlan(
   return "generate-plan";
 }
 
+
+function ensureTargetRepository(state: PlannerGraphState & Record<string, any>): PlannerGraphState {
+if (!state.targetRepository) {
+  state.targetRepository = {
+    owner: process.env.REPO_OWNER || "ONE-F-M",
+    repo: process.env.REPO_NAME || "one_fm",
+    branch: process.env.REPO_BRANCH || "version-15"
+  };
+}
+  if (!state.assistant_id) {
+    state.assistant_id = "open-swe-agent"; // set your default assistant id
+  }
+  return state;
+}
+
 const workflow = new StateGraph(PlannerGraphStateObj, GraphConfiguration)
-  .addNode("prepare-graph-state", prepareGraphState, {
+  .addNode("prepare-graph-state", (state, config) => {
+    // Ensure targetRepository is always set before running prepareGraphState
+    return prepareGraphState(ensureTargetRepository(state) as PlannerGraphState, config as GraphConfig);
+  }, {
     ends: [END, "initialize-sandbox"],
   })
   .addNode("initialize-sandbox", initializeSandbox)
@@ -59,5 +78,7 @@ const workflow = new StateGraph(PlannerGraphStateObj, GraphConfiguration)
   .addEdge("generate-plan", "notetaker")
   .addEdge("notetaker", "interrupt-proposed-plan");
 
-export const graph = workflow.compile();
+export const graph = workflow.compile({
+  checkpointer: new MemorySaver(),
+});
 graph.name = "Open SWE - Planner";

@@ -121,6 +121,7 @@ export async function prepareGraphState(
     ],
     // Reset plan context summary as it's now included in the messages array.
     contextGatheringNotes: "",
+    assistant_id: state.assistant_id,
   };
 
   return new Command({

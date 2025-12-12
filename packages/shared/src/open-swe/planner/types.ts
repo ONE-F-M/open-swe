@@ -12,6 +12,12 @@ import { withLangGraph } from "@langchain/langgraph/zod";
 import { tokenDataReducer } from "../../caching.js";
 
 export const PlannerGraphStateObj = MessagesZodState.extend({
+  assistant_id: withLangGraph(z.string(), {
+    reducer: {
+      schema: z.string(),
+      fn: (_state, update) => update,
+    },
+  }),
   sandboxSessionId: withLangGraph(z.string(), {
     reducer: {
       schema: z.string(),
