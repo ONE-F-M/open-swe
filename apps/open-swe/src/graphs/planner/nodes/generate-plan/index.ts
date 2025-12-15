@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { benchListAppsTool } from "@openswe/cli/src/tools.js";
 import { isAIMessage, ToolMessage } from "@langchain/core/messages";
 import { createSessionPlanToolFields } from "../../../../tools/index.js";
 import { GraphConfig } from "@openswe/shared/open-swe/types";
@@ -22,8 +23,8 @@ import { formatCustomRulesPrompt } from "../../../../utils/custom-rules.js";
 import { getScratchpad } from "../../utils/scratchpad-notes.js";
 import {
   SCRATCHPAD_PROMPT,
-  SYSTEM_PROMPT,
   CUSTOM_FRAMEWORK_PROMPT,
+  MERGED_SYSTEM_PROMPT,
 } from "./prompt.js";
 import { shouldUseCustomFramework } from "../../../../utils/should-use-custom-framework.js";
 import { DO_NOT_RENDER_ID_PREFIX } from "@openswe/shared/constants";
@@ -36,12 +37,13 @@ function formatSystemPrompt(
   state: PlannerGraphState,
   config: GraphConfig,
 ): string {
-  // It's a followup if there's more than one human message.
   const isFollowup = isFollowupRequest(state.taskPlan, state.proposedPlan);
   const scratchpad = getScratchpad(state.messages)
     .map((n) => `- ${n}`)
     .join("\n");
-  return SYSTEM_PROMPT.replace(
+  // Use merged Frappe prompt if frappeMode is enabled
+  let prompt = MERGED_SYSTEM_PROMPT(config);
+  prompt = prompt.replace(
     "{FOLLOWUP_MESSAGE_PROMPT}",
     isFollowup
       ? "\n" +
@@ -61,6 +63,7 @@ function formatSystemPrompt(
       "{ADDITIONAL_INSTRUCTIONS}",
       shouldUseCustomFramework(config) ? CUSTOM_FRAMEWORK_PROMPT : "",
     );
+  return prompt;
 }
 
 export async function generatePlan(
@@ -145,6 +148,7 @@ export async function generatePlan(
     typeof sessionPlanTool.schema
   >;
 
+  // --- Frappe/ERPNext core file restriction enforcement ---
   const toolResponse = new ToolMessage({
     id: `${DO_NOT_RENDER_ID_PREFIX}${uuidv4()}`,
     tool_call_id: toolCall.id ?? "",
@@ -152,10 +156,41 @@ export async function generatePlan(
     name: sessionPlanTool.name,
   });
 
+  const forbidden = proposedPlanArgs.plan.some(
+    (item) => /frappe\//i.test(item) || /erpnext\//i.test(item)
+  );
+  if (forbidden) {
+    return {
+      messages: [response, toolResponse],
+      proposedPlanTitle: "Invalid Plan",
+      proposedPlan: [
+        "This request cannot be completed because it requires modifying core files, which is not allowed. Please request a customization in one_fm only."
+      ],
+      ...(newSessionId && { sandboxSessionId: newSessionId }),
+      tokenData: trackCachePerformance(response, modelName),
+    };
+  }
+  // --- End restriction enforcement ---
+
+  // Get the app name for the current site (fallback to one_fm if not found)
+
+  let appName = "one_fm";
+  try {
+    const site = (config as any).site || process.env.FRAPPE_SITE || "onefm";
+    const { apps } = await benchListAppsTool.invoke({ site });
+    appName = (apps as string[]).find((a: string) => !["frappe", "erpnext"].includes(a)) || appName;
+  } catch (e) {
+    // fallback to default
+  }
+
+  const planWithAppName = proposedPlanArgs.plan.map((item: string) =>
+    item.replace(/\[app_name\]/g, appName)
+  );
+
   return {
     messages: [response, toolResponse],
     proposedPlanTitle: proposedPlanArgs.title,
-    proposedPlan: proposedPlanArgs.plan,
+    proposedPlan: planWithAppName,
     ...(newSessionId && { sandboxSessionId: newSessionId }),
     tokenData: trackCachePerformance(response, modelName),
   };

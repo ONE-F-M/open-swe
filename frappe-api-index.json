@@ -1,0 +1,107 @@
+{
+  "description": "Semantic API Index for Frappe/ERPNext v15 focusing on critical operations and best practices. Used by the LazyContextLoader to ground the Planner Agent.",
+  "modules": [
+    {
+      "name": "frappe",
+      "content": [
+        {
+          "signature": "frappe.db.get_value(doctype, filters, fieldname, as_dict=False, ...)",
+          "description": "Safely retrieves a single field value or multiple fields from the database. Preferred over raw SQL for simple fetches.",
+          "example": "customer_email = frappe.db.get_value('Customer', 'CUST-001', 'email_id')"
+        },
+        {
+          "signature": "frappe.db.set_value(doctype, name, fieldname, value, update_modified=True, ...)",
+          "description": "Safely updates a single field value in a document without triggering the full document controller lifecycle (faster, but use with caution).",
+          "example": "frappe.db.set_value('Sales Order', 'SO-001', 'custom_status', 'Reviewed')"
+        },
+        {
+          "signature": "frappe.db.sql(query, values=(), as_dict=False, ...)",
+          "description": "Executes raw SQL query. CRITICAL: MUST use parameterized queries (%s) to prevent SQL injection.",
+          "example": "frappe.db.sql('SELECT name FROM tabItem WHERE item_group = %s', ['Products'], as_dict=True)"
+        },
+        {
+          "signature": "frappe.get_doc(doctype, name=None, for_update=False)",
+          "description": "Fetches a full document instance, used for complex manipulation, saving, validating, or submitting.",
+          "example": "doc = frappe.get_doc('Sales Invoice', 'SINV-001')"
+        },
+        {
+          "signature": "frappe.throw(msg, exc=None, title=None)",
+          "description": "Raises a ValidationError and shows a user-facing message. Used for validation hooks.",
+          "example": "if doc.amount < 0: frappe.throw(_('Amount cannot be negative'))"
+        },
+        {
+          "signature": "@frappe.whitelist(methods=['GET', 'POST'])",
+          "description": "Decorator required for any Python function exposed as a public REST API endpoint or callable via frappe.call(). Mandatory for Server Scripts.",
+          "example": "@frappe.whitelist(methods=['GET']) def get_data(): return frappe.db.count('Item')"
+        }
+      ]
+    },
+    {
+      "name": "frappe.tests.utils",
+      "content": [
+        {
+          "signature": "class FrappeTestCase(unittest.TestCase)",
+          "description": "Base class for unit tests. Automatically handles database transactions (rollback after each test method) and sets up the Frappe environment.",
+          "example": "from frappe.tests.utils import FrappeTestCase\nclass TestMyModule(FrappeTestCase): ..."
+        },
+        {
+          "signature": "self.assertEqual(a, b)",
+          "description": "Standard assertion methods for testing values.",
+          "example": "self.assertEqual(doc.status, 'Completed')"
+        }
+      ]
+    },
+    {
+      "name": "frappe.utils.caching",
+      "content": [
+        {
+          "signature": "@redis_cache(ttl=seconds)",
+          "description": "Decorator to cache function results in Redis, improving performance for expensive, repetitive queries.",
+          "example": "@redis_cache(ttl=3600)\ndef get_cached_report_data(): ..."
+        }
+      ]
+    },
+    {
+      "name": "frappe.query_builder",
+      "content": [
+        {
+          "signature": "from frappe.query_builder import DocType, functions as fn",
+          "description": "Frappe Query Builder modules for type-safe, database-agnostic query construction (v15 best practice).",
+          "example": "Item = DocType('Item'); frappe.qb.from_(Item).select(Item.name).where(Item.disabled == 0)"
+        }
+      ]
+    },
+    {
+      "name": "hooks.py structure (for DocType Hooks)",
+      "content": [
+        {
+          "signature": "doc_events = { 'DocType Name': { 'hook_name': 'app_path.module.function_name' } }",
+          "description": "Hook structure used in hooks.py to link custom Python functions to events like 'validate', 'on_submit', or 'before_save'.",
+          "example": "doc_events = { 'Sales Invoice': { 'validate': 'one_fm.api.sales_invoice.validate_tax' } }"
+        }
+      ]
+    }
+  ],
+  "doctypes": {
+    "Client": {
+      "schema": {
+        "fields": [
+          { "fieldname": "client_name", "fieldtype": "Data" },
+          { "fieldname": "client_group", "fieldtype": "Link", "options": "Client Group" },
+          { "fieldname": "tax_id", "fieldtype": "Data", "label": "Tax ID" }
+        ],
+        "primary_methods": ["validate", "on_submit", "on_cancel"]
+      }
+    },
+    "Sales Invoice": {
+      "schema": {
+        "fields": [
+          { "fieldname": "customer", "fieldtype": "Link", "options": "Customer" },
+          { "fieldname": "posting_date", "fieldtype": "Date" },
+          { "fieldname": "grand_total", "fieldtype": "Currency" }
+        ],
+        "primary_methods": ["validate", "on_submit", "on_cancel"]
+      }
+    }
+  }
+}

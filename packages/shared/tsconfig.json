@@ -19,7 +19,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "types": ["jest", "node"],
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
   "include": ["src/**/*.ts", "src/*.ts"],
   "exclude": ["node_modules", "dist"]

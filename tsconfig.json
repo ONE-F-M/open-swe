@@ -17,9 +17,19 @@
     "strict": true,
     "strictFunctionTypes": false,
     "outDir": "dist",
+    "rootDir": "../..",
     "types": ["jest", "node"],
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "isolatedModules": true
   },
-  "include": ["**/*.ts"],
+  "include": [
+    "apps/open-swe/**/*.ts",
+    "apps/open-swe/**/*.js",
+    "apps/open-swe/jest.setup.cjs",
+    "packages/shared/**/*.ts",
+    "apps/cli/**/*.ts",
+    "src/**/*",
+    "../../apps/cli/src/**/*"
+  ],
   "exclude": ["node_modules", "dist"]
 }

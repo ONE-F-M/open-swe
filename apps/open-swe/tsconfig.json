@@ -17,7 +17,7 @@
     "strict": true,
     "strictFunctionTypes": false,
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "../..",
     "types": ["jest", "node"],
     "resolveJsonModule": true,
     "isolatedModules": true

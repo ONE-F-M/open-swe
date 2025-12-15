@@ -702,11 +702,19 @@ export const GraphConfiguration = z.object({
   }),
 });
 
+/**
+ * OpenSWE custom config fields for planner/agent. Add new fields here as needed.
+ */
+export interface OpenSweConfigurable {
+  // ...add other custom fields as needed
+}
+
+// Update GraphConfig type to allow frappeMode
 export type GraphConfig = LangGraphRunnableConfig<
-  z.infer<typeof GraphConfiguration> & {
+  (z.infer<typeof GraphConfiguration> & OpenSweConfigurable & {
     thread_id: string;
     assistant_id: string;
-  }
+  })
 >;
 
 export interface AgentSession {
